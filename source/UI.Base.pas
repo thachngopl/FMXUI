@@ -21,8 +21,9 @@ interface
 {$ENDIF}
 
 uses
-  UI.Debug, UI.Utils,
+  UI.Debug, UI.Utils, UI.Utils.SVGImage,
   FMX.Forms,
+  FMX.FontGlyphs,
   {$IFDEF ANDROID}
   Androidapi.Helpers,
   Androidapi.Jni,
@@ -84,37 +85,25 @@ type
   /// </summary>
   TViewScroll = (None, Horizontal, Vertical, Both);
 
-  TViewBrushKind = (None, Solid, Gradient, Bitmap, Resource, Patch9Bitmap, AccessoryBitmap);
+  TViewBrushKind = (None, Solid, Gradient, Bitmap, Resource, Patch9Bitmap, AccessoryBitmap, SVGImage);
 
   /// <summary>
   /// 附件样式
   /// </summary>
-  TViewAccessoryStyle = (Accessory, Icon, Path);
+  TViewAccessoryStyle = (Accessory, Path);
 
   /// <summary>
   /// 附图类型
   /// </summary>
   TViewAccessoryType = (None, More, Checkmark, Detail, Ellipses, Flag, Back, Refresh,
     Action, Play, Rewind, Forwards, Pause, Stop, Add, Prior,
-    Next, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Reply,
+    Next, BackWard, ForwardGo, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Reply,
     Search, Bookmarks, Trash, Organize, Camera, Compose, Info,
     Pagecurl, Details, RadioButton, RadioButtonChecked, CheckBox,
-    CheckBoxChecked, UserDefined1, UserDefined2, UserDefined3);
-
-  /// <summary>
-  /// 常用 Icon 类型
-  /// </summary>
-  TViewIconType = (
-    None, AlarmClock, BarChart, Barcode, Bell, BookCover, BookCoverMinus, BookCoverPlus, BookMark, BookOpen,
-    Calendar, Camera, Car, Clock, CloudDownload, CloudUpload, Cross, Document, Download, Earth, Email,
-    Fax, FileList, FileMinus, FilePlus, Files, FileStar, FileTick, Flag, Folder, FolderMinus,
-    FolderPlus, FolderStar, Home, Inbox, Incoming, ListBullets, ListCheckBoxes, ListImages, ListNumbered, ListTicked,
-    Location, More, Note, Outgoing,
-    PaperClip, Photo, PieChart, Pin, Presentation, Search, Settings, Share, ShoppingCart, Spanner, Speaker,
-    Star, Tablet, Tag, Telephone, Telephone2, TelephoneBook, Tick, Timer, Trash, Upload,
-    User, UserEdit, UserGroup, Users, UserSearch,
-    VideoCamera, VideoPlayer, Viewer,
-    Wifi, Window, Write);
+    CheckBoxChecked, User, Password, Down, Exit, Finish, Calendar, Cross, Menu,
+    About, Share, UserMsg, Cart, Setting, Edit, Home, Heart,
+    Comment, Collection, Fabulous, Image, Help, VCode, Time, UserReg, Scan, Circle, Location,
+    UserDefined1, UserDefined2, UserDefined3);
 
   TPatchBounds = class(TBounds);
 
@@ -131,13 +120,14 @@ type
     procedure FocusToNext();
   end;
 
-
   /// <summary>
   /// 列表视图状态
   /// </summary>
-  TListViewState = (None {无},
+  TListViewState = (None {无},  PullChangeing,
     PullDownStart {下拉开始}, PullDownOK {下拉到位}, PullDownFinish {下拉松开}, PullDownComplete {下拉完成},
-    PullUpStart {上拉开始}, PullUpOK {下拉到位}, PullUpFinish {上拉松开}, PullUpComplete {上拉完成}
+    PullUpStart {上拉开始}, PullUpOK {上拉到位}, PullUpFinish {上拉松开}, PullUpComplete {上拉完成},
+    PullLeftStart {左拉开始}, PullLeftOK {左拉到位}, PullLeftFinish {左拉松开}, PullLeftComplete {左拉完成},
+    PullRightStart {右拉开始}, PullRightOK {右拉到位}, PullRightFinish {右拉松开}, PullRightComplete {右拉完成}
   );
 
   /// <summary>
@@ -155,10 +145,16 @@ type
     /// </summary>
     procedure SetStateHint(const State: TListViewState; const Msg: string);
     function GetVisible: Boolean;
+    function GetOrientation: TOrientation;
+    procedure SetOrientation(AOrientation: TOrientation);
     /// <summary>
     /// 可视状态
     /// </summary>
     property Visible: Boolean read GetVisible;
+    /// <summary>
+    /// 方向
+    /// </summary>
+    property Orientation: TOrientation read GetOrientation write SetOrientation;
   end;
 
   /// <summary>
@@ -172,15 +168,20 @@ type
     FImageScale: Single;
     FImageMap: TBitmap;
     FActiveStyle: TFmxObject;
-    procedure AddEllipsesAccessory;
-    procedure AddFlagAccessory;
+  protected
+    //procedure AddFlagAccessory;
     procedure AddBackAccessory;
+    procedure AddAddAccessory;
+    procedure AddRefreshAccessory;
     procedure CalculateImageScale;
     function GetAccessoryFromResource(const AStyleName: string; const AState: string = ''): TBitmap;
+    function LoadFromResource(const AStyleName: string): TBitmap;
     procedure Initialize;
   public
     constructor Create;
     destructor Destroy; override;
+
+    procedure AddPath(const PathData: string; const SW, SH: Single);
 
     function GetAccessoryImage(AAccessory: TViewAccessoryType): TBitmap;
     procedure SetAccessoryImage(AAccessory: TViewAccessoryType; const Value: TBitmap);
@@ -214,7 +215,6 @@ type
 
   TViewAccessory = class(TPersistent)
   private
-    FIcon: TViewIconType;
     FStyle: TViewAccessoryStyle;
     FAccessoryType: TViewAccessoryType;
     FAccessoryColor: TAlphaColor;
@@ -224,13 +224,11 @@ type
     procedure SetAccessoryType(const Value: TViewAccessoryType);
     procedure SetAccessoryColor(const Value: TAlphaColor);
     function GetIsEmpty: Boolean;
-    procedure SetIcon(const Value: TViewIconType);
     procedure SetStyle(const Value: TViewAccessoryStyle);
     function GetPathData: string;
     procedure SetPathData(const Value: string);
   protected
     procedure DoChanged();
-    procedure DoIconChanged();
     procedure DoPathChanged(Sender: TObject);
   public
     constructor Create;
@@ -240,7 +238,6 @@ type
     property OnChanged: TNotifyEvent read FOnChanged write FOnChanged;
   published
     property Accessory: TViewAccessoryType read FAccessoryType write SetAccessoryType default TViewAccessoryType.None;
-    property Icon: TViewIconType read FIcon write SetIcon default TViewIconType.None;
     property Color: TAlphaColor read FAccessoryColor write SetAccessoryColor default TAlphaColorRec.White;
     property PathData: string read GetPathData write SetPathData;
     property Style: TViewAccessoryStyle read FStyle write SetStyle default TViewAccessoryStyle.Accessory;
@@ -249,19 +246,24 @@ type
   TViewBrushBase = class(TBrush)
   private
     FAccessory: TViewAccessory;
+    FSvgImage: TSVGImage;
     function GetKind: TViewBrushKind;
     procedure SetKind(const Value: TViewBrushKind);
     function IsKindStored: Boolean;
     function GetAccessory: TViewAccessory;
     procedure SetAccessory(const Value: TViewAccessory);
+    procedure SetSvgImage(const Value: TSVGImage);
+    function GetSvgImage: TSVGImage;
   protected
     procedure DoAccessoryChange(Sender: TObject);
+    procedure DoSvgImageChange(Sender: TObject);
   public
     destructor Destroy; override;
     procedure Assign(Source: TPersistent); override;
     procedure ChangeToSolidColor(const AColor: TAlphaColor; IsDefault: Boolean = True);
   published
     property Accessory: TViewAccessory read GetAccessory write SetAccessory;
+    property SVGImage: TSVGImage read GetSvgImage write SetSvgImage;
     property Kind: TViewBrushKind read GetKind write SetKind stored IsKindStored;
   end;
 
@@ -273,6 +275,7 @@ type
   protected
   public
     constructor Create(const ADefaultKind: TViewBrushKind; const ADefaultColor: TAlphaColor);
+    procedure Assign(Source: TPersistent); override;
   published
     property Bitmap: TPatch9Bitmap read GetBitmap write SetBitmap stored IsPatch9BitmapStored;
   end;
@@ -301,6 +304,7 @@ type
     procedure IGlyph.SetImages = SetImageList;
   public
     constructor Create(const ADefaultKind: TBrushKind; const ADefaultColor: TAlphaColor);
+    procedure Assign(Source: TPersistent); override;
     property Owner: TObject read FOwner write FOwner;
     property Images: TBaseImageList read GetImageList write SetImageList;
   published
@@ -313,15 +317,17 @@ type
   TDrawablePosition = (Left, Right, Top, Bottom, Center);
 
   /// <summary>
+  /// 绘制样式
+  /// </summary>
+  TDrawableKind = (None, Circle, Ellipse);
+
+  /// <summary>
   /// 可绘制对象
   /// </summary>
   TDrawableBase = class(TPersistent)
   private
     FOnChanged: TNotifyEvent;
-
-    FDefaultColor: TAlphaColor;
-    FDefaultKind: TViewBrushKind;
-
+    FKind: TDrawableKind;
 
     FXRadius, FYRadius: Single;
     FIsEmpty: Boolean;
@@ -336,6 +342,7 @@ type
     procedure SetCorners(const Value: TCorners);
     function IsStoredCorners: Boolean;
     procedure SetCornerType(const Value: TCornerType);
+    procedure SetKind(const Value: TDrawableKind);
   protected
     [Weak] FView: IView;
     FDefault: TBrush;  // 0
@@ -357,7 +364,7 @@ type
     class procedure FillRect9Patch(Canvas: TCanvas; const ARect: TRectF; const XRadius, YRadius: Single; const ACorners: TCorners;
       const AOpacity: Single; const ABrush: TViewBrush; const ACornerType: TCornerType = TCornerType.Round);
     procedure FillRect(Canvas: TCanvas; const ARect: TRectF; const XRadius, YRadius: Single; const ACorners: TCorners;
-      const AOpacity: Single; const ABrush: TBrush; const ACornerType: TCornerType = TCornerType.Round); inline;
+      const AOpacity: Single; const ABrush: TBrush; const ACornerType: TCornerType = TCornerType.Round);
     procedure FillArc(Canvas: TCanvas; const Center, Radius: TPointF;
       const StartAngle, SweepAngle, AOpacity: Single; const ABrush: TBrush); inline;
 
@@ -377,7 +384,9 @@ type
 
     procedure Assign(Source: TPersistent); override;
     procedure Change; virtual;
-    procedure CreateBrush(var Value: TBrush; IsDefault: Boolean); overload; virtual;
+    procedure CreateBrush(var Value: TBrush;
+      const ADefaultKind: TViewBrushKind = TViewBrushKind.None;
+      const ADefaultColor: TAlphaColor = TAlphaColors.Null); overload; virtual;
     function CreateBrush(): TBrush; overload;
 
     procedure Draw(Canvas: TCanvas); virtual;
@@ -404,6 +413,9 @@ type
     property YRadius: Single read FYRadius write SetYRadius;
     property Corners: TCorners read FCorners write SetCorners stored IsStoredCorners;
     property CornerType: TCornerType read FCornerType write SetCornerType default TCornerType.Round;
+
+    // 背景样式
+    property Kind: TDrawableKind read FKind write SetKind default TDrawableKind.None;
   end;
 
   /// <summary>
@@ -432,6 +444,7 @@ type
     property YRadius;
     property Corners;
     property CornerType;
+    property Kind;
     property ItemDefault: TViewBrush index 0 read GetValue write SetValue;
     property ItemPressed: TViewBrush index 1 read GetValue write SetValue;
     property ItemFocused: TViewBrush index 2 read GetValue write SetValue;
@@ -448,6 +461,8 @@ type
   TViewBorderStyle = (None {无边框},
     RectBorder {四周矩形边框,会使用圆角设置},
     RectBitmap {实心的矩形, 像框},
+    CircleBorder {圆形边框},
+    EllipseBorder {椭圆边框},
     LineEdit {底部边框（带两端凸出},
     LineTop {顶部边框},
     LineBottom {底部边框},
@@ -622,7 +637,10 @@ type
     /// </summary>
     procedure AdjustDraw(Canvas: TCanvas; var R: TRectF; ExecDraw: Boolean; AState: TViewState);
 
-    procedure CreateBrush(var Value: TBrush; IsDefault: Boolean); override;
+    procedure CreateBrush(var Value: TBrush;
+      const ADefaultKind: TViewBrushKind = TViewBrushKind.None;
+      const ADefaultColor: TAlphaColor = TAlphaColors.Null); override;
+
     procedure Draw(Canvas: TCanvas); override;
     procedure DrawStateTo(Canvas: TCanvas; const R: TRectF; AState: TViewState; const AOpacity: Single); override;
     procedure DrawImage(Canvas: TCanvas; Index: Integer; const R: TRectF); overload;
@@ -638,6 +656,7 @@ type
     property YRadius;
     property Corners;
     property CornerType;
+    property Kind;
     property ItemDefault: TBrush index 0 read GetValue write SetValue;
     property ItemPressed: TBrush index 1 read GetValue write SetValue;
     property ItemFocused: TBrush index 2 read GetValue write SetValue;
@@ -833,6 +852,7 @@ type
 
     procedure Realign;
     procedure SetVisible(const Value: Boolean);
+    function GetEnabled: Boolean;
 
     property Value: Integer read GetValue write SetValue;
     property MaxValue: Integer read GetMaxValue write SetMaxValue;
@@ -976,6 +996,8 @@ type
     destructor Destroy; override;
     procedure Change;
 
+    procedure Assign(Source: TPersistent); override;
+
     function GetStateColor(const State: TViewState): TAlphaColor; virtual; abstract;
 
     function CalcTextObjectSize(const AText: string; const MaxWidth, SceneScale: Single;
@@ -994,7 +1016,7 @@ type
       State: TViewState = TViewState.None); overload;
 
     // 计算 Text 真实大小
-    procedure TextSize(const AText: string; var ASize: TSizeF; const SceneScale: Single; 
+    procedure TextSize(const AText: string; var ASize: TSizeF; const SceneScale: Single;
       const MaxWidth: Single = -1; AWordWrap: Boolean = False);
 
     procedure Draw(const Canvas: TCanvas; const R: TRectF;
@@ -1041,6 +1063,7 @@ type
   public
     constructor Create(AOwner: TComponent);
     destructor Destroy; override;
+    procedure Assign(Source: TPersistent); override;
     function GetStateColor(const State: TViewState): TAlphaColor; override;
   published
     property AutoSize;
@@ -1067,9 +1090,9 @@ type
     function Text: string;
   end;
 
-  THtmlDataList = TList<THtmlTextItem>;  
+  THtmlDataList = TList<THtmlTextItem>;
 
-  TViewLinkClickEvent = procedure (Sender: TObject; const Text, URL: string) of object;    
+  TViewLinkClickEvent = procedure (Sender: TObject; const Text, URL: string) of object;
 
   TViewHtmlText = class(TPersistent)
   private const
@@ -1082,19 +1105,19 @@ type
     FRealHtmlText: string;
     FFont: TFont;
     FReplace: Boolean;
-    
+
     FLinkHrefs: TStrings;
     FLinkRange: TArray<TRectF>;
     FLinkRangeCount: Integer;
     FLinkHot: Integer;
 
     FDefaultCursor: TCursor;
-    
+
     procedure SetHtmlText(const Value: string);
   protected
     procedure ParseHtmlText(const Text: string); virtual;
     function GetHtmlText: string; virtual;
-    function ReplaceValue(const Value: string): string;    
+    function ReplaceValue(const Value: string): string;
     function PointInLink(const X, Y: Single): Integer;
   public
     constructor Create(const AHtmlText: string = '');
@@ -1110,26 +1133,37 @@ type
     procedure CalcTextSize(Canvas: TCanvas; TextSet: UI.Base.TTextSettings; const R: TRectF;
       var ASize: TSizeF);
 
-    procedure MouseDown(Sender: TView; Button: TMouseButton; Shift: TShiftState; X, Y: Single); 
+    procedure MouseDown(Sender: TView; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
     procedure MouseMove(Sender: TView; X, Y: Single);
-    procedure MouseUp(Sender: TView; Button: TMouseButton; Shift: TShiftState; X, Y: Single); 
+    procedure MouseUp(Sender: TView; Button: TMouseButton; Shift: TShiftState; X, Y: Single);
     procedure MouseLeave(Sender: TView);
 
     property Text: string read FText;
-    property List: THtmlDataList read FList;  
+    property List: THtmlDataList read FList;
     property LinkHot: Integer read FLinkHot;
     property DefaultCursor: TCursor read FDefaultCursor write FDefaultCursor;
   published
     property HtmlText: string read FHtmlText write SetHtmlText;
   end;
 
+  TAniCalculationsEx = class (TAniCalculations)
+  private
+    function GetDownPoint: TPointD;
+  public
+    property DownPoint: TPointD read GetDownPoint;
+    property Shown;
+    property MouseTarget;
+    property MinTarget;
+    property MaxTarget;
+    property Target;
+  end;
+
   /// <summary>
   /// 滚动动画控制器
   /// </summary>
-  TScrollCalculations = class (TAniCalculations)
+  TScrollCalculations = class (TAniCalculationsEx)
   private
     [Weak] FScrollView: TView;
-    function GetDownPoint: TPointD;
   protected
     procedure DoChanged; override;
     procedure DoStart; override;
@@ -1137,12 +1171,6 @@ type
   public
     constructor Create(AOwner: TPersistent); override;
     property ScrollView: TView read FScrollView;
-    property Shown;
-    property MouseTarget;
-    property MinTarget;
-    property MaxTarget;
-    property Target;
-    property DownPoint: TPointD read GetDownPoint;
   end;
 
   TScrollBarHelper = class Helper for TScrollBar
@@ -1333,6 +1361,7 @@ type
     procedure DoLinkClick(const Text, URL: string); virtual;
     procedure HandleSizeChanged; override;
     procedure Click; override;
+    procedure DoClickEvent; virtual;
 
 
     // 限制组件最大和最小大小
@@ -1380,6 +1409,7 @@ type
   protected
     {$IFDEF ANDROID}
     class procedure InitAudioManager();
+    class procedure InitFontGlyphs();
     {$ENDIF}
   public
     /// <summary>
@@ -1410,6 +1440,10 @@ type
     procedure Invalidate;
     procedure DoResize;
 
+    {$IFDEF ANDROID}
+    class function AppContext: JContext;
+    {$ENDIF}
+
     procedure SetBackground(const Value: TDrawable); overload;
     procedure SetBackground(const Value: TAlphaColor); overload;
     procedure SetBackground(const Value: TGradient); overload;
@@ -1423,6 +1457,8 @@ type
     function FindStyleResource<T: TFmxObject>(const AStyleLookup: string; var AResource: T): Boolean; overload;
     function FindAndCloneStyleResource<T: TFmxObject>(const AStyleLookup: string; var AResource: T): Boolean;
 
+    { ITriggerEffect }
+    procedure ApplyTriggerEffect(const AInstance: TFmxObject; const ATrigger: string); override;
     { ITriggerAnimation }
     procedure StartTriggerAnimation(const AInstance: TFmxObject; const ATrigger: string); override;
     procedure StartTriggerAnimationWait(const AInstance: TFmxObject; const ATrigger: string); override;
@@ -1442,11 +1478,13 @@ type
     class function GetNavigationBarHeight: Single;
 
     { Rtti Function }
+    class function ExistRttiValue(Instance: TObject; const Name: string): Boolean;
     class function GetRttiValue(Instance: TObject; const Name: string): TValue; overload;
     class function GetRttiValue<T>(Instance: TObject; const Name: string): T; overload;
     class function GetRttiObject(Instance: TObject; const Name: string): TObject;
     class procedure SetRttiValue(Instance: TObject; const Name: string; const Value: TValue); overload;
     class procedure SetRttiValue<T>(Instance: TObject; const Name: string; const Value: T); overload;
+    class procedure SetRttiObject(Instance: TObject; const Name: string; const Value: TObject); overload;
     class procedure InvokeMethod(Instance: TObject; const Name: string; const Args: array of TValue); overload;
     class function InvokeMethod<T>(Instance: TObject; const Name: string; const Args: array of TValue): T; overload;
 
@@ -1485,6 +1523,8 @@ type
     /// 获取父级Form
     /// </summary>
     property ParentForm: TCustomForm read GetParentForm;
+
+    property IsChecked: Boolean read GetIsChecked write SetIsChecked;
   published
     /// <summary>
     /// 组件相对于容器的对齐方式。当容器为非布局组件时有效，在部分布局组件中有效，但不建议使用。
@@ -1673,7 +1713,7 @@ type
   published
     property Orientation;
   end;
-  
+
   /// <summary>
   /// 相对布局
   /// </summary>
@@ -1805,6 +1845,8 @@ procedure SimulateClick(AControl: TControl; const x, y: single);
 procedure ReplaceOpaqueColor(ABmp: TBitmap; const Color: TAlphaColor);
 // 屏幕缩放
 function GetScreenScale: single;
+// 获取组件所属的窗口
+function GetParentForm(AObj: TFmxObject): TCustomForm;
 
 function ViewStateToString(const State: TViewStates): string;
 function ComponentStateToString(const State: TComponentState): string;
@@ -1818,6 +1860,9 @@ var
 implementation
 
 uses
+  {$IFDEF ANDROID}
+  UI.FontGlyphs.Android,
+  {$ENDIF}
   UI.Ani;
 
 resourcestring
@@ -1841,6 +1886,14 @@ var
   FAudioManager: JAudioManager = nil;
   {$ENDIF}
 
+function AlignToPixel(Canvas: TCanvas; const Rect: TRectF): TRectF;
+begin
+  Result.Left := Canvas.AlignToPixelHorizontally(Rect.Left);
+  Result.Top := Canvas.AlignToPixelVertically(Rect.Top);
+  Result.Right := Result.Left + Round(Rect.Width * Canvas.Scale) / Canvas.Scale; // keep ratio horizontally
+  Result.Bottom := Result.Top + Round(Rect.Height * Canvas.Scale) / Canvas.Scale; // keep ratio vertically
+end;
+
 function ComponentStateToString(const State: TComponentState): string;
 
   procedure Write(var P: PChar; const V: string);
@@ -1850,18 +1903,18 @@ function ComponentStateToString(const State: TComponentState): string;
     PV := PChar(V);
     PM := PV + Length(V);
     while PV < PM do begin
-      P^ := PV^;     
+      P^ := PV^;
       Inc(P);
-      Inc(PV); 
+      Inc(PV);
     end;
   end;
-    
+
 var
   P, P1: PChar;
 begin
   SetLength(Result, 256);
   P := PChar(Result);
-  P1 := P;   
+  P1 := P;
   if csLoading in State then Write(P, 'csLoading,');
   if csReading in State then Write(P, 'csReading,');
   if csWriting in State then Write(P, 'csWriting,');
@@ -1918,7 +1971,7 @@ type TPrivateControl = class(TControl);
 
 function GetBoundsFloat(const R: TBounds): string;
 begin
-  if Assigned(R) and (R.Left = R.Top) and (R.Left = R.Right) and (R.Left = R.Bottom) then
+  if Assigned(R) and (R.Left = R.Top) and (R.Left = R.Right) and (R.Left = R.Bottom) and (R.Left <> 0) then
     Result := Format('%.1f', [R.Left])
   else Result := '';
 end;
@@ -2000,6 +2053,23 @@ begin
       List.Free;
     end;
     Result := True;
+  end;
+end;
+
+function GetParentForm(AObj: TFmxObject): TCustomForm;
+var
+  V: TFmxObject;
+begin
+  Result := nil;
+  if not Assigned(AObj) then
+    Exit;
+  V := AObj.Parent;
+  while Assigned(V) do begin
+    if V is TCustomForm then begin
+      Result := V as TCustomForm;
+      Break;
+    end;
+    V := V.Parent;
   end;
 end;
 
@@ -2121,19 +2191,20 @@ var
   x, y: Integer;
   AMap: TBitmapData;
   PixelColor: TAlphaColor;
-  //PixelWhiteColor: TAlphaColor;
   C: PAlphaColorRec;
+  A: Single;
 begin
   if (Assigned(ABmp)) then begin
     if ABmp.Map(TMapAccess.ReadWrite, AMap) then
     try
-      AlphaColorToPixel(Color   , @PixelColor, AMap.PixelFormat);
+      AlphaColorToPixel(Color, @PixelColor, AMap.PixelFormat);
+      A := TAlphaColorRec(PixelColor).A / 255;
       //AlphaColorToPixel(claWhite, @PixelWhiteColor, AMap.PixelFormat);
       for y := 0 to ABmp.Height - 1 do begin
         for x := 0 to ABmp.Width - 1 do begin
           C := @PAlphaColorArray(AMap.Data)[y * (AMap.Pitch div 4) + x];
           if (C^.Color <> claWhite) and (C^.A > 0) then begin
-            TAlphaColorRec(PixelColor).A := C^.A;
+            TAlphaColorRec(PixelColor).A := Trunc(C^.A * A);
             C^.Color := PremultiplyAlpha(PixelColor);
           end;
             //C^.Color := PremultiplyAlpha(MakeColor(PixelColor, C^.A / $FF));
@@ -2207,6 +2278,7 @@ begin
     Src := TDrawable(Source);
     FCornerType := Src.FCornerType;
     FCorners := Src.Corners;
+    FKind := Src.FKind;
     AssignItem(TViewState.None, Src);
     AssignItem(TViewState.Pressed, Src);
     AssignItem(TViewState.Focused, Src);
@@ -2224,16 +2296,21 @@ end;
 
 function TDrawableBase.BrushIsEmpty(V: TBrush): Boolean;
 begin
-  if (not Assigned(V)) or (V.Kind = TBrushKind.None) or
-    ((V.Color and $FF000000 = 0) and (V.Kind = TBrushKind.Solid)) or
-    ((Ord(V.Kind) = Ord(TViewBrushKind.AccessoryBitmap)) and ((TViewBrushBase(V).FAccessory = nil) or TViewBrushBase(V).FAccessory.IsEmpty))
-  then begin
-    if (V is TViewImagesBrush) and (TViewImagesBrush(V).FImageIndex >= 0) then
-      Result := False
-    else
-      Result := True
-  end else
-    Result := False;
+  if not Assigned(V) then
+    Result := True
+  else begin
+    if (V.Kind = TBrushKind.None) or
+      ((V.Color and $FF000000 = 0) and (V.Kind = TBrushKind.Solid)) or
+      ((Ord(V.Kind) = Ord(TViewBrushKind.SVGImage)) and ((TViewBrushBase(V).FSvgImage = nil) or (TViewBrushBase(V).FSvgImage.Empty))) or
+      ((Ord(V.Kind) = Ord(TViewBrushKind.AccessoryBitmap)) and ((TViewBrushBase(V).FAccessory = nil) or TViewBrushBase(V).FAccessory.IsEmpty))
+    then begin
+      if (V is TViewImagesBrush) and (TViewImagesBrush(V).FImageIndex >= 0) then
+        Result := False
+      else
+        Result := True
+    end else
+      Result := False;
+  end;
 end;
 
 procedure TDrawableBase.Change;
@@ -2245,43 +2322,40 @@ constructor TDrawableBase.Create(View: IView; const ADefaultKind: TViewBrushKind
   const ADefaultColor: TAlphaColor);
 begin
   FView := View;
-  FDefaultColor := ADefaultColor;
-  FDefaultKind := ADefaultKind;
   FCorners := AllCorners;
   FCornerType := TCornerType.Round;
 
   if Assigned(FView) and (csDesigning in FView.GetComponentState) then begin
-    CreateBrush(FDefault, True);
-    CreateBrush(FPressed, False);
-    CreateBrush(FFocused, False);
-    CreateBrush(FHovered, False);
-    CreateBrush(FSelected, False);
-    CreateBrush(FChecked, False);
-    CreateBrush(FEnabled, False);
-    CreateBrush(FActivated, False);
+    CreateBrush(FDefault, ADefaultKind, ADefaultColor);
+    CreateBrush(FPressed);
+    CreateBrush(FFocused);
+    CreateBrush(FHovered);
+    CreateBrush(FSelected);
+    CreateBrush(FChecked);
+    CreateBrush(FEnabled);
+    CreateBrush(FActivated);
     FIsEmpty := GetEmpty;
   end else begin
     FIsEmpty := True;
-    if (FDefaultKind = TViewBrushKind.Solid) and (FDefaultColor <> TAlphaColorRec.Null) then
-      CreateBrush(FDefault, True);
+    if (ADefaultKind = TViewBrushKind.Solid) and (ADefaultColor <> TAlphaColorRec.Null) then begin
+      CreateBrush(FDefault, ADefaultKind, ADefaultColor);
+    end;
   end;
   InitDrawable;
 end;
 
-procedure TDrawableBase.CreateBrush(var Value: TBrush; IsDefault: Boolean);
+procedure TDrawableBase.CreateBrush(var Value: TBrush;
+  const ADefaultKind: TViewBrushKind; const ADefaultColor: TAlphaColor);
 begin
   if Assigned(Value) then
     FreeAndNil(Value);
-  if IsDefault then
-    Value := TViewBrush.Create(FDefaultKind, FDefaultColor)
-  else
-    Value := TViewBrush.Create(TViewBrushKind.None, TAlphaColorRec.Null);
+  Value := TViewBrush.Create(ADefaultKind, ADefaultColor);
   Value.OnChanged := DoChange;
 end;
 
 function TDrawableBase.CreateBrush: TBrush;
 begin
-  CreateBrush(Result, False);
+  CreateBrush(Result);
 end;
 
 destructor TDrawableBase.Destroy;
@@ -2329,7 +2403,7 @@ begin
   if (Result = nil) and
     (AutoCreate or (csLoading in FView.GetComponentState)) then
   begin
-    CreateBrush(Result, State = TViewState.None);
+    CreateBrush(Result);
     SetStateBrush(State, Result);
   end;
 end;
@@ -2473,6 +2547,7 @@ procedure TDrawableBase.FillRect(Canvas: TCanvas; const ARect: TRectF;
   const ACornerType: TCornerType = TCornerType.Round);
 var
   Bmp: TBitmap;
+  V: Single;
 begin
   if (Ord(ABrush.Kind) = Ord(TViewBrushKind.Patch9Bitmap)) and (ABrush is TViewBrush) then begin
     FillRect9Patch(Canvas, ARect, XRadius, YRadius, ACorners, AOpacity, TViewBrush(ABrush), ACornerType);
@@ -2481,10 +2556,36 @@ begin
       if Assigned(TViewBrushBase(ABrush).FAccessory) then begin
         Bmp := TViewBrushBase(ABrush).FAccessory.FAccessoryBmp;
         if Assigned(Bmp) then
-          Canvas.DrawBitmap(Bmp, RectF(0, 0, Bmp.Width, Bmp.Height), ARect, AOpacity, True);
+          Canvas.DrawBitmap(Bmp, RectF(0, 0, Bmp.Width, Bmp.Height), AlignToPixel(Canvas, ARect), AOpacity);
       end;
-    end else
-      Canvas.FillRect(ARect, XRadius, YRadius, ACorners, AOpacity, ABrush, ACornerType);
+    end else if Ord(ABrush.Kind) = Ord(TViewBrushKind.SVGImage) then begin
+      if Assigned(TViewBrushBase(ABrush).FSvgImage) then begin
+        if TViewBrushBase(ABrush).FSvgImage.Loss then
+          TViewBrushBase(ABrush).FSvgImage.SetSize(Round(ARect.Width * GetScreenScale), Round(ARect.Height * GetScreenScale));
+        Bmp := TViewBrushBase(ABrush).FSvgImage.Bitmap;
+        if Assigned(Bmp) then
+          Canvas.DrawBitmap(Bmp, RectF(0, 0, Bmp.Width, Bmp.Height), ARect, AOpacity);
+      end;
+    end else begin
+      case FKind of
+        TDrawableKind.None:
+          begin
+            Canvas.FillRect(ARect, XRadius, YRadius, ACorners, AOpacity, ABrush, ACornerType);
+          end;
+        TDrawableKind.Circle:
+          begin
+            V := Min(ARect.Width, ARect.Height) * 0.5;
+            Canvas.FillArc(
+              PointF(ARect.Width * 0.5 + ARect.Left, ARect.Height * 0.5 + ARect.Top),
+              PointF(V, V), 0, 360, AOpacity, ABrush);
+          end;
+        TDrawableKind.Ellipse:
+          begin
+            Canvas.FillEllipse(ARect, AOpacity, ABrush);
+          end;
+      end;
+
+    end;
   end;
 end;
 
@@ -2626,6 +2727,14 @@ begin
   V.Kind := TBrushKind.Gradient;
 end;
 
+procedure TDrawableBase.SetKind(const Value: TDrawableKind);
+begin
+  if FKind <> Value then begin
+    FKind := Value;
+    DoChange(Self);
+  end;
+end;
+
 procedure TDrawableBase.SetRadius(const X, Y: Single);
 begin
   FYRadius := Y;
@@ -2661,7 +2770,10 @@ procedure TDrawableBase.SetBitmap(State: TViewState; const Value: TBitmap);
 var V: TBrush;
 begin
   V := GetBrush(State, True);
-  V.Bitmap.Bitmap.Assign(Value);
+  if Assigned(Value) then
+    V.Bitmap.Bitmap.Assign(Value)
+  else
+    V.Bitmap.Bitmap.Clear(0);
   V.Kind := TBrushKind.Bitmap;
 end;
 
@@ -2779,16 +2891,16 @@ begin
   case FPosition of
     TDrawablePosition.Left:
       begin
-        if ExecDraw then begin        
+        if ExecDraw then begin
           DR.Left := R.Left;
           DR.Top := R.Top + (SH - FHeight) / 2;
           DR.Right := DR.Left + FWidth;
-          DR.Bottom := DR.Top + FHeight;  
+          DR.Bottom := DR.Top + FHeight;
           DrawStateTo(Canvas, DR, AState);
         end;
         R.Left := R.Left + FWidth + FPadding;
       end;
-    TDrawablePosition.Right: 
+    TDrawablePosition.Right:
       begin
         if ExecDraw then begin
           DR.Left := R.Right - FWidth;
@@ -2799,7 +2911,7 @@ begin
         end;
         R.Right := R.Right - FWidth - FPadding;
       end;
-    TDrawablePosition.Top: 
+    TDrawablePosition.Top:
       begin
         if ExecDraw then begin
           DR.Left := R.Left + (SW - FWidth) / 2;
@@ -2858,14 +2970,12 @@ begin
   FPadding := 4;
 end;
 
-procedure TDrawableIcon.CreateBrush(var Value: TBrush; IsDefault: Boolean);
+procedure TDrawableIcon.CreateBrush(var Value: TBrush;
+  const ADefaultKind: TViewBrushKind; const ADefaultColor: TAlphaColor);
 begin
   if Assigned(Value) then
     FreeAndNil(Value);
-  if IsDefault then
-    Value := TViewImagesBrush.Create(TBrushKind(FDefaultKind), FDefaultColor)
-  else
-    Value := TViewImagesBrush.Create(TBrushKind.None, TAlphaColorRec.Null);
+  Value := TViewImagesBrush.Create(TBrushKind(ADefaultKind), ADefaultColor);
   TViewImagesBrush(Value).FOwner := Self;
   Value.OnChanged := DoChange;
 end;
@@ -3243,7 +3353,7 @@ end;
 
 procedure TViewColor.SetEnabled(const Value: TAlphaColor);
 begin
-  if FEnabled <> Value then begin  
+  if FEnabled <> Value then begin
     FEnabled := Value;
     EnabledChange := True;
     DoChange(Self);
@@ -3252,7 +3362,7 @@ end;
 
 procedure TViewColor.SetFocused(const Value: TAlphaColor);
 begin
-  if Focused <> Value then begin  
+  if Focused <> Value then begin
     FFocused := Value;
     FocusedChange := True;
     DoChange(Self);
@@ -3261,7 +3371,7 @@ end;
 
 procedure TViewColor.SetHovered(const Value: TAlphaColor);
 begin
-  if FHovered <> Value then begin  
+  if FHovered <> Value then begin
     FHovered := Value;
     HoveredChange := True;
     DoChange(Self);
@@ -3270,7 +3380,7 @@ end;
 
 procedure TViewColor.SetPressed(const Value: TAlphaColor);
 begin
-  if FPressed <> Value then begin  
+  if FPressed <> Value then begin
     FPressed := Value;
     PressedChange := True;
     DoChange(Self);
@@ -3279,7 +3389,7 @@ end;
 
 procedure TViewColor.SetSelected(const Value: TAlphaColor);
 begin
-  if FSelected <> Value then begin  
+  if FSelected <> Value then begin
     FSelected := Value;
     SelectedChange := True;
     DoChange(Self);
@@ -3289,7 +3399,7 @@ end;
 procedure TViewColor.SetValue(const Index: Integer; const Value: TAlphaColor);
 begin
   SetColor(TViewState(Index), Value);
-end;  
+end;
 
 { TTextColor }
 
@@ -3300,7 +3410,7 @@ end;
 
 procedure TTextColor.SetHintText(const Value: TAlphaColor);
 begin
-  if FHintText <> Value then begin  
+  if FHintText <> Value then begin
     FHintText := Value;
     DoChange(Self);
   end;
@@ -3554,6 +3664,12 @@ begin
     (Assigned(ParentControl)) and (ParentControl is TRelativeLayout);
 end;
 
+procedure TView.ApplyTriggerEffect(const AInstance: TFmxObject;
+  const ATrigger: string);
+begin
+  // inherited; disable all effect
+end;
+
 function TView.CanAnimation: Boolean;
 begin
   Result := False;
@@ -3581,6 +3697,7 @@ begin
   if Assigned(OnClick) then
     PlayClickEffect;
   {$ENDIF}
+  DoClickEvent();
   inherited Click;
 end;
 
@@ -3684,6 +3801,10 @@ procedure TView.DoCheckedChange;
 begin
 end;
 
+procedure TView.DoClickEvent;
+begin
+end;
+
 procedure TView.DoDeactivate;
 begin
   DecViewState(TViewState.Activated);
@@ -3727,13 +3848,13 @@ begin
 end;
 
 procedure TView.DoLinkClick(const Text, URL: string);
-begin 
+begin
 end;
 
 procedure TView.DoMatrixChanged(Sender: TObject);
 begin
   inherited DoMatrixChanged(Sender);
-  if Assigned(FBadgeView) then begin 
+  if Assigned(FBadgeView) and FBadgeView.GetEnabled then begin
     FBadgeView.SetVisible(Visible);
     if Visible then
       FBadgeView.Realign;
@@ -4035,6 +4156,24 @@ begin
   Result := FWidthSize;
 end;
 
+class procedure TView.SetRttiObject(Instance: TObject; const Name: string;
+  const Value: TObject);
+var
+  FType: TRttiType;
+  FFiled: TRttiField;
+  FContext: TRttiContext;
+begin
+  FContext := TRttiContext.Create;
+  try
+    FType := FContext.GetType(Instance.ClassType);
+    FFiled := FType.GetField(Name);
+    if Assigned(FFiled) and (FFiled.FieldType.TypeKind = tkClass) then
+      FFiled.SetValue(Instance, Value);
+  finally
+    FContext.Free;
+  end;
+end;
+
 class procedure TView.SetRttiValue(Instance: TObject; const Name: string; const Value: TValue);
 var
   FType: TRttiType;
@@ -4101,7 +4240,7 @@ begin
   try
     FType := FContext.GetType(Instance.ClassType);
     FFiled := FType.GetField(Name);
-    if not Assigned(FFiled) then  
+    if not Assigned(FFiled) then
       Result := T(nil)
     else
       Result := FFiled.GetValue(Instance).AsType<T>();
@@ -4211,6 +4350,17 @@ begin
   end;
 end;
 
+{$IFDEF ANDROID}
+class function TView.AppContext: JContext;
+begin
+  {$IF CompilerVersion > 27}
+  Result := TAndroidHelper.Context;
+  {$ELSE}
+  Result := SharedActivityContext;
+  {$ENDIF}
+end;
+{$ENDIF}
+
 class procedure TView.InvokeMethod(Instance: TObject; const Name: string;
   const Args: array of TValue);
 var
@@ -4259,10 +4409,27 @@ class procedure TView.InitAudioManager();
 var
   NativeService: JObject;
 begin
-  NativeService := TAndroidHelper.Context.getSystemService(TJContext.JavaClass.AUDIO_SERVICE);
-  if not Assigned(NativeService) then
-    Exit;
-  FAudioManager := TJAudioManager.Wrap((NativeService as ILocalObject).GetObjectID);
+  try
+    NativeService := TAndroidHelper.Context.getSystemService(TJContext.JavaClass.AUDIO_SERVICE);
+    if not Assigned(NativeService) then
+      Exit;
+    FAudioManager := TJAudioManager.Wrap((NativeService as ILocalObject).GetObjectID);
+  except
+  end;
+end;
+
+class procedure TView.InitFontGlyphs();
+//var
+//  FCurrentManager: TFontGlyphManager;
+begin
+//  try
+//    FCurrentManager := TFontGlyphManager.Current;
+//    if Assigned(FCurrentManager) then
+//      FreeAndNil(FCurrentManager);
+//    FCurrentManager := TAndroidFontGlyphManagerFMXUI.Create;
+//    SetRttiValue<TFontGlyphManager>('FCurrentManager', FCurrentManager);
+//  except
+//  end;
 end;
 {$ENDIF}
 
@@ -4421,6 +4588,23 @@ begin
     DecViewState(TViewState.Enabled);
   end else begin
     IncViewState(TViewState.Enabled);
+  end;
+end;
+
+class function TView.ExistRttiValue(Instance: TObject;
+  const Name: string): Boolean;
+var
+  FType: TRttiType;
+  FFiled: TRttiField;
+  FContext: TRttiContext;
+begin
+  FContext := TRttiContext.Create;
+  try
+    FType := FContext.GetType(Instance.ClassType);
+    FFiled := FType.GetField(Name);
+    Result := Assigned(FFiled);
+  finally
+    FContext.Free;
   end;
 end;
 
@@ -4691,15 +4875,15 @@ end;
 
 procedure TView.SetOrientation(const Value: TOrientation);
 begin
-  if FOrientation <> Value then begin  
+  if FOrientation <> Value then begin
     FOrientation := Value;
     DoOrientation();
   end;
 end;
 
 procedure TView.SetPaddings(const Value: string);
-var 
-  V: Single; 
+var
+  V: Single;
 begin
   if Assigned(Padding) and GetFloatValue(Value, V) then
     Padding.Rect := RectF(V, V, V, V);
@@ -4774,23 +4958,13 @@ end;
 procedure TView.StartTriggerAnimation(const AInstance: TFmxObject;
   const ATrigger: string);
 begin
-  DisableDisappear := True;
-  try
-    inherited;
-  finally
-    DisableDisappear := False;
-  end;
+  // inherited; disable all effect
 end;
 
 procedure TView.StartTriggerAnimationWait(const AInstance: TFmxObject;
   const ATrigger: string);
 begin
-  DisableDisappear := True;
-  try
-    inherited;
-  finally
-    DisableDisappear := False;
-  end;
+  // inherited; disable all effect
 end;
 
 procedure TView.StartWindowDrag;
@@ -5401,7 +5575,7 @@ begin
         {$IFDEF MSWINDOWS}
         if IsDesignerControl(Control) then Continue;
         {$ENDIF}
-        
+
         if IsAW then begin
           V := Control.Position.X + Control.Width + Control.Margins.Right;
           if V > AWidth then
@@ -5447,7 +5621,7 @@ begin
     {$IFDEF MSWINDOWS}
     if IsDesignerControl(Control) then Continue;
     {$ENDIF}
-    
+
     // 如果还没有找到需要自动大小的组件，则进行检测
     if (AControl = nil) then begin
       View := nil;
@@ -5726,13 +5900,13 @@ begin
     if IsAW then AWidth := 0;
     if IsAH then AHeight := 0;
 
-    for I := 0 to ChildrenCount - 1 do begin
+    for I := 0 to {$IF CompilerVersion >= 30}ControlsCount{$ELSE}ChildrenCount{$ENDIF} - 1 do begin
       Control := Controls[I];
       if not Control.Visible then Continue;
       {$IFDEF MSWINDOWS}
       if IsDesignerControl(Control) then Continue;
       {$ENDIF}
-      
+
       if IsAW then begin
         V := Control.Width + Control.Position.X + Control.Margins.Right + Padding.Right;
         if V > AWidth then
@@ -6018,6 +6192,28 @@ begin
     Result := Ceil(Value * Scale) / Scale
   else
     Result := Ceil(Value);
+end;
+
+procedure TTextSettingsBase.Assign(Source: TPersistent);
+var
+  Src: TTextSettingsBase;
+  LastOnChange: TNotifyEvent;
+begin
+  if Source is TTextSettingsBase then begin
+    Src := TTextSettingsBase(Source);
+    LastOnChange := Self.OnChanged;
+    Self.OnChanged := nil;
+    Self.Font := Src.Font;
+    Self.Gravity := Src.Gravity;
+    Self.AutoSize := Src.AutoSize;
+    Self.PrefixStyle := Src.PrefixStyle;
+    Self.Trimming := Src.Trimming;
+    Self.WordWrap := Src.WordWrap;
+    Self.FText := Src.FText;
+    Self.OnChanged := LastOnChange;
+    DoChange;
+  end else
+    inherited;
 end;
 
 function TTextSettingsBase.CalcTextHeight(const AText: string;
@@ -6445,7 +6641,7 @@ begin
   with FLayout do begin
     BeginUpdate;
     TopLeft := TPointF.Zero;
-    if MaxWidth < 0 then    
+    if MaxWidth < 0 then
       MaxSize := TTextLayout.MaxLayoutSize
     else
       MaxSize := PointF(MaxWidth, $FFFFFF);
@@ -6461,6 +6657,15 @@ begin
 end;
 
 { TTextSettings }
+
+procedure TTextSettings.Assign(Source: TPersistent);
+begin
+  if Source is TTextSettings then begin
+    Self.FColor.Assign(TTextSettings(Source).FColor);
+    Self.FOpacity := TTextSettings(Source).FOpacity;
+  end;
+  inherited Assign(Source);
+end;
 
 constructor TTextSettings.Create(AOwner: TComponent);
 begin
@@ -6553,7 +6758,13 @@ end;
 procedure TDrawableBorder.Assign(Source: TPersistent);
 begin
   if Source is TDrawableBorder then begin
-    FBorder.Assign(TDrawableBorder(Source).FBorder);
+    if TDrawableBorder(Source).FBorder = nil then
+      FreeAndNil(FBorder)
+    else begin
+      if (FBorder = nil) then
+        CreateBorder();
+      FBorder.Assign(TDrawableBorder(Source).FBorder);
+    end;
   end;
   inherited Assign(Source);
 end;
@@ -6603,16 +6814,47 @@ begin
         begin
           Canvas.FillRect(R, XRadius, YRadius, FCorners, AOpacity, FBorder.Brush, FCornerType);
         end;
+      TViewBorderStyle.CircleBorder:
+        begin
+          if FBorder.Width > 0.1 then begin
+            TH := FBorder.Width / 1.95;
+            LRect.Left := R.Left + TH;
+            LRect.Top := R.Top + TH;
+            LRect.Right := R.Right - TH;
+            LRect.Bottom := R.Bottom - TH;
+            TH := Min(LRect.Width, LRect.Height) * 0.5;
+            Canvas.DrawArc(
+              PointF(LRect.Left + LRect.Width * 0.5, LRect.Top + LRect.Height * 0.5),
+              PointF(TH, TH), 0, 360, AOpacity, FBorder.Brush);
+          end else begin
+            TH := Min(R.Width, R.Height) * 0.5;
+            Canvas.DrawArc(PointF(R.Left + R.Width * 0.5, R.Top + R.Height * 0.5),
+              PointF(TH, TH), 0, 360, AOpacity, FBorder.Brush);
+          end;
+        end;
+      TViewBorderStyle.EllipseBorder:
+        begin
+          if FBorder.Width > 0.1 then begin
+            TH := FBorder.Width / 1.95;
+            LRect.Left := R.Left + TH;
+            LRect.Top := R.Top + TH;
+            LRect.Right := R.Right - TH;
+            LRect.Bottom := R.Bottom - TH;
+            Canvas.DrawEllipse(LRect, AOpacity, FBorder.Brush);
+          end else
+            Canvas.DrawEllipse(R, AOpacity, FBorder.Brush);
+        end;
       TViewBorderStyle.LineEdit:
         begin
-          Canvas.DrawLine(R.BottomRight, PointF(R.Left, R.Bottom), AOpacity, FBorder.Brush);
+          Canvas.FillRect(RectF(R.Left, R.Bottom - FBorder.Width, R.Right, R.Bottom),
+            0, 0, FCorners, AOpacity, FBorder.Brush, FCornerType);
           TH := Min(6, Min(FBorder.Width * 4, R.Height / 4));
           Canvas.DrawLine(PointF(R.Left, R.Bottom - TH), PointF(R.Left, R.Bottom), AOpacity, FBorder.Brush);
           Canvas.DrawLine(PointF(R.Right, R.Bottom - TH), R.BottomRight, AOpacity, FBorder.Brush);
         end;
       TViewBorderStyle.LineTop:
         begin
-          Canvas.FillRect(RectF(R.Left, R.Top, R.Right, R.Top + FBorder.Width),
+          Canvas.FillRect(AlignToPixel(Canvas, RectF(R.Left, R.Top, R.Right, R.Top + FBorder.Width)),
             XRadius, YRadius, FCorners, AOpacity, FBorder.Brush, FCornerType);
         end;
       TViewBorderStyle.LineBottom:
@@ -6868,10 +7110,17 @@ destructor TViewBrushBase.Destroy;
 begin
   if FAccessory <> nil then
     FreeAndNil(FAccessory);
+  FreeAndNil(FSvgImage);
   inherited;
 end;
 
 procedure TViewBrushBase.DoAccessoryChange(Sender: TObject);
+begin
+  if Assigned(OnChanged) then
+    OnChanged(Self);
+end;
+
+procedure TViewBrushBase.DoSvgImageChange(Sender: TObject);
 begin
   if Assigned(OnChanged) then
     OnChanged(Self);
@@ -6889,6 +7138,15 @@ end;
 function TViewBrushBase.GetKind: TViewBrushKind;
 begin
   Result := TViewBrushKind(inherited Kind);
+end;
+
+function TViewBrushBase.GetSvgImage: TSVGImage;
+begin
+  if FSvgImage = nil then begin
+    FSvgImage := TSVGImage.Create;
+    FSvgImage.OnChange := DoSvgImageChange;
+  end;
+  Result := FSvgImage;
 end;
 
 function TViewBrushBase.IsKindStored: Boolean;
@@ -6910,7 +7168,27 @@ begin
   inherited Kind := TBrushKind(Value);
 end;
 
+procedure TViewBrushBase.SetSvgImage(const Value: TSVGImage);
+begin
+  if Value = nil then
+    FreeAndNil(FSvgImage)
+  else begin
+    if FSvgImage = nil then begin
+      FSvgImage := TSVGImage.Create;
+      FSvgImage.OnChange := DoSvgImageChange;
+    end;
+    FSvgImage.Assign(Value);
+  end;
+end;
+
 { TViewBrush }
+
+procedure TViewBrush.Assign(Source: TPersistent);
+begin
+  if Source is TViewBrush then
+    Self.Bitmap := TViewBrush(Source).Bitmap;
+  inherited;
+end;
 
 constructor TViewBrush.Create(const ADefaultKind: TViewBrushKind;
   const ADefaultColor: TAlphaColor);
@@ -6947,8 +7225,10 @@ end;
 
 procedure TPatch9Bitmap.Assign(Source: TPersistent);
 begin
-  if Source is TPatch9Bitmap then
+  if Source is TPatch9Bitmap then begin
+    FRemoveBlackLine := TPatch9Bitmap(Source).FRemoveBlackLine;
     FBounds.Assign(TPatch9Bitmap(Source).FBounds);
+  end;
   inherited;
 end;
 
@@ -6981,31 +7261,19 @@ end;
 
 { TViewAccessoryImageList }
 
-procedure TViewAccessoryImageList.AddBackAccessory;
-var
-  AAcc: TBitmap;
+procedure TViewAccessoryImageList.AddAddAccessory;
 begin
-  AAcc := TBitmap.Create;
-  AAcc.SetSize(64, 64);
-  AAcc.Clear(claNull);
-  AAcc.Canvas.BeginScene;
-  try
-    AAcc.Canvas.Fill.Color := claSilver;
-    AAcc.Canvas.FillPolygon([
-      PointF(40, 0),
-      PointF(46, 6),
-      PointF(21, 31.5),
-      PointF(46, 56),
-      PointF(40, 63),
-      PointF(9, 31.5),
-      PointF(40, 0)
-    ], 1);
-  finally
-    AAcc.Canvas.EndScene;
-  end;
-  Add(AAcc);
+  AddPath('M1024 472.436364H549.236364V0h-76.8v472.436364H0v76.8h472.436364V1024h76.8V549.236364H1024z', 1024, 1024);
 end;
 
+procedure TViewAccessoryImageList.AddBackAccessory;
+begin
+  AddPath('M360.44 511.971l442.598-422.3c21.503-20.53 21.503-53.782 0-74.286-21.477-20.505-56.316-20.505-77.794 '+
+    '0L282.645 437.71 204.8 511.97l77.82 74.262 442.624 422.3c21.503 20.555 56.317 20.555 77.82 0 21.477-20.48 '+
+    '21.477-53.758 0-74.237L360.439 511.971z', 1024, 1024);
+end;
+
+{
 procedure TViewAccessoryImageList.AddEllipsesAccessory;
 var
   AAcc: TBitmap;
@@ -7034,7 +7302,9 @@ begin
   end;
   Add(AAcc);
 end;
+}
 
+{
 procedure TViewAccessoryImageList.AddFlagAccessory;
 var
   AAcc: TBitmap;
@@ -7069,6 +7339,72 @@ begin
     AAcc.Canvas.EndScene;
   end;
   Add(AAcc);
+end;
+}
+
+procedure TViewAccessoryImageList.AddPath(const PathData: string;const SW, SH: Single);
+
+  procedure ParserPathSize(Path: TPathData; var W, H: Single);
+  var
+     I: Integer;
+  begin
+    W := 0;
+    H := 0;
+    for I := 0 to Path.Count - 1 do begin
+      with Path.Points[I] do begin
+        if Kind <> TPathPointKind.Close then begin
+          W := Max(Point.X, W);
+          H := Max(Point.Y, H);
+        end;
+      end;
+    end;
+  end;
+
+const
+  SWH = 64;
+var
+  AAcc: TBitmap;
+  Path: TPathData;
+  W, H, SX: Single;
+begin
+  AAcc := TBitmap.Create;
+  AAcc.SetSize(SWH, SWH);
+  Path := TPathData.Create;
+  try
+    Path.Data := PathData;
+    if (SW = 0) and (SH = 0) then
+      ParserPathSize(Path, W, H)
+    else begin
+      W := SW;
+      H := SH;
+    end;
+    if W <= 1 then W := SWH;
+    if H <= 1 then H := SWH;
+    SX := SWH / W;
+    if SWH / H < SX then
+      SX := SWH / H;
+    if (SX <> 1) then
+      Path.Scale(SX, SX);
+    AAcc.Canvas.BeginScene;
+    try
+      AAcc.Clear(claNull);
+      AAcc.Canvas.Fill.Color := claBlack;
+      AAcc.Canvas.FillPath(Path, 1);
+    finally
+      AAcc.Canvas.EndScene;
+    end;
+  finally
+    FreeAndNil(Path);
+  end;
+  Add(AAcc);
+end;
+
+procedure TViewAccessoryImageList.AddRefreshAccessory;
+begin
+  AddPath('M817.093 597.188c-7.486 157.805-137.796 283.457-297.455 283.457-164.47 '+
+    '0-297.805-133.336-297.805-297.805 0-159.643 125.608-289.923 283.375-297.452'+
+    'v141.624l311.986-170.174L505.208 58.3v141.862c-204.746 7.63-368.38 176.022-368.38 '+
+    '382.622 0 211.472 171.421 382.893 382.891 382.893 206.65 0 375.053-163.692 382.627-368.49h-85.253z', 1024, 1024);
 end;
 
 procedure TViewAccessoryImageList.CalculateImageScale;
@@ -7215,40 +7551,74 @@ begin
   begin
     case ICount of
       TViewAccessoryType.None: Add(GetAccessoryFromResource('none'));
-      TViewAccessoryType.More: Add(GetAccessoryFromResource('listviewstyle.accessorymore'));
-      TViewAccessoryType.Checkmark: Add(GetAccessoryFromResource('listviewstyle.accessorycheckmark'));
-      TViewAccessoryType.Detail: Add(GetAccessoryFromResource('listviewstyle.accessorydetail'));
-      TViewAccessoryType.Ellipses: AddEllipsesAccessory;
-      TViewAccessoryType.Flag: AddFlagAccessory;
+      TViewAccessoryType.More: Add(LoadFromResource('ICON_More'));
+      TViewAccessoryType.Checkmark: Add(LoadFromResource('ICON_Checkmark')); //Add(GetAccessoryFromResource('listviewstyle.accessorycheckmark'));
+      TViewAccessoryType.Detail: Add(LoadFromResource('ICON_DETAIL')); // Add(GetAccessoryFromResource('listviewstyle.accessorydetail'));
+      TViewAccessoryType.Ellipses: Add(LoadFromResource('ICON_Ellipses')); //AddEllipsesAccessory;
+      TViewAccessoryType.Flag: Add(LoadFromResource('icon_Flag')); //AddFlagAccessory;
       TViewAccessoryType.Back: AddBackAccessory;// Add(GetAccessoryFromResource('backtoolbutton.icon'));
-      TViewAccessoryType.Refresh: Add(GetAccessoryFromResource('refreshtoolbutton.icon'));
-      TViewAccessoryType.Action: Add(GetAccessoryFromResource('actiontoolbutton.icon'));
-      TViewAccessoryType.Play: Add(GetAccessoryFromResource('playtoolbutton.icon'));
-      TViewAccessoryType.Rewind: Add(GetAccessoryFromResource('rewindtoolbutton.icon'));
-      TViewAccessoryType.Forwards: Add(GetAccessoryFromResource('forwardtoolbutton.icon'));
-      TViewAccessoryType.Pause: Add(GetAccessoryFromResource('pausetoolbutton.icon'));
-      TViewAccessoryType.Stop: Add(GetAccessoryFromResource('stoptoolbutton.icon'));
-      TViewAccessoryType.Add: Add(GetAccessoryFromResource('addtoolbutton.icon'));
-      TViewAccessoryType.Prior: Add(GetAccessoryFromResource('priortoolbutton.icon'));
-      TViewAccessoryType.Next: Add(GetAccessoryFromResource('nexttoolbutton.icon'));
-      TViewAccessoryType.ArrowUp: Add(GetAccessoryFromResource('arrowuptoolbutton.icon'));
-      TViewAccessoryType.ArrowDown: Add(GetAccessoryFromResource('arrowdowntoolbutton.icon'));
-      TViewAccessoryType.ArrowLeft: Add(GetAccessoryFromResource('arrowlefttoolbutton.icon'));
-      TViewAccessoryType.ArrowRight: Add(GetAccessoryFromResource('arrowrighttoolbutton.icon'));
-      TViewAccessoryType.Reply: Add(GetAccessoryFromResource('replytoolbutton.icon'));
-      TViewAccessoryType.Search: Add(GetAccessoryFromResource('searchtoolbutton.icon'));
-      TViewAccessoryType.Bookmarks: Add(GetAccessoryFromResource('bookmarkstoolbutton.icon'));
-      TViewAccessoryType.Trash: Add(GetAccessoryFromResource('trashtoolbutton.icon'));
-      TViewAccessoryType.Organize: Add(GetAccessoryFromResource('organizetoolbutton.icon'));
-      TViewAccessoryType.Camera: Add(GetAccessoryFromResource('cameratoolbutton.icon'));
-      TViewAccessoryType.Compose: Add(GetAccessoryFromResource('composetoolbutton.icon'));
-      TViewAccessoryType.Info: Add(GetAccessoryFromResource('infotoolbutton.icon'));
-      TViewAccessoryType.Pagecurl: Add(GetAccessoryFromResource('pagecurltoolbutton.icon'));
-      TViewAccessoryType.Details: Add(GetAccessoryFromResource('detailstoolbutton.icon'));
-      TViewAccessoryType.RadioButton: Add(GetAccessoryFromResource('radiobuttonstyle.background'));
-      TViewAccessoryType.RadioButtonChecked: Add(GetAccessoryFromResource('radiobuttonstyle.background', 'checked'));
-      TViewAccessoryType.CheckBox: Add(GetAccessoryFromResource('checkboxstyle.background'));
-      TViewAccessoryType.CheckBoxChecked: Add(GetAccessoryFromResource('checkboxstyle.background', 'checked'));
+      TViewAccessoryType.Refresh: Add(LoadFromResource('ICON_REFRESH')); // Add(GetAccessoryFromResource('refreshtoolbutton.icon'));
+      TViewAccessoryType.Action: Add(LoadFromResource('ICON_ACTION')); // Add(GetAccessoryFromResource('actiontoolbutton.icon'));
+
+      TViewAccessoryType.Play: Add(LoadFromResource('ICON_PLAY')); // Add(GetAccessoryFromResource('playtoolbutton.icon'));
+      TViewAccessoryType.Rewind: Add(LoadFromResource('ICON_REWIND')); //Add(GetAccessoryFromResource('rewindtoolbutton.icon'));
+      TViewAccessoryType.Forwards: Add(LoadFromResource('ICON_FORWARDS')); //Add(GetAccessoryFromResource('forwardtoolbutton.icon'));
+      TViewAccessoryType.Pause: Add(LoadFromResource('ICON_PAUSE')); //Add(GetAccessoryFromResource('pausetoolbutton.icon'));
+      TViewAccessoryType.Stop: Add(LoadFromResource('ICON_STOP')); // Add(GetAccessoryFromResource('stoptoolbutton.icon'));
+      TViewAccessoryType.Prior: Add(LoadFromResource('ICON_PRIOR'));// Add(GetAccessoryFromResource('priortoolbutton.icon'));
+      TViewAccessoryType.Next: Add(LoadFromResource('ICON_NEXT'));// Add(GetAccessoryFromResource('nexttoolbutton.icon'));
+      TViewAccessoryType.BackWard: Add(LoadFromResource('ICON_NEXT'));//
+      TViewAccessoryType.ForwardGo: Add(LoadFromResource('ICON_FORWARD'));//
+
+      TViewAccessoryType.Add: Add(LoadFromResource('ICON_ADD')); // AddAddAccessory; // Add(GetAccessoryFromResource('addtoolbutton.icon'));
+      TViewAccessoryType.ArrowUp: Add(LoadFromResource('ICON_ARROWUP')); //Add(GetAccessoryFromResource('arrowuptoolbutton.icon'));
+      TViewAccessoryType.ArrowDown: Add(LoadFromResource('ICON_ARROWDOWN'));// Add(GetAccessoryFromResource('arrowdowntoolbutton.icon'));
+      TViewAccessoryType.ArrowLeft: Add(LoadFromResource('ICON_ARROWLEFT')); // Add(GetAccessoryFromResource('arrowlefttoolbutton.icon'));
+      TViewAccessoryType.ArrowRight: Add(LoadFromResource('ICON_ARROWRIGHT')); //Add(GetAccessoryFromResource('arrowrighttoolbutton.icon'));
+      TViewAccessoryType.Reply: Add(LoadFromResource('ICON_REPLY')); // Add(GetAccessoryFromResource('replytoolbutton.icon'));
+      TViewAccessoryType.Search: Add(LoadFromResource('ICON_SEARCH'));// Add(GetAccessoryFromResource('searchtoolbutton.icon'));
+      TViewAccessoryType.Bookmarks: Add(LoadFromResource('ICON_BOOKMARKS')); // Add(GetAccessoryFromResource('bookmarkstoolbutton.icon'));
+      TViewAccessoryType.Trash: Add(LoadFromResource('ICON_TRASH'));// Add(GetAccessoryFromResource('trashtoolbutton.icon'));
+      TViewAccessoryType.Organize: Add(LoadFromResource('ICON_ORGANIZE'));// Add(GetAccessoryFromResource('organizetoolbutton.icon'));
+      TViewAccessoryType.Camera: Add(LoadFromResource('ICON_CAMERA')); // Add(GetAccessoryFromResource('cameratoolbutton.icon'));
+      TViewAccessoryType.Compose: Add(LoadFromResource('ICON_COMPOSE')); // Add(GetAccessoryFromResource('composetoolbutton.icon'));
+      TViewAccessoryType.Info: Add(LoadFromResource('ICON_INFO')); // Add(GetAccessoryFromResource('infotoolbutton.icon'));
+      TViewAccessoryType.Pagecurl: Add(LoadFromResource('ICON_PAGECURL')); //Add(GetAccessoryFromResource('pagecurltoolbutton.icon'));
+      TViewAccessoryType.Details: Add(LoadFromResource('ICON_DETAILS')); //Add(GetAccessoryFromResource('detailstoolbutton.icon'));
+      TViewAccessoryType.RadioButton: Add(LoadFromResource('ICON_RADIOBUTTON')); // Add(GetAccessoryFromResource('radiobuttonstyle.background'));
+      TViewAccessoryType.RadioButtonChecked: Add(LoadFromResource('ICON_RADIOBUTTONCHECKED')); // Add(GetAccessoryFromResource('radiobuttonstyle.background', 'checked'));
+      TViewAccessoryType.CheckBox: Add(LoadFromResource('ICON_CheckBox')); // Add(GetAccessoryFromResource('checkboxstyle.background'));
+      TViewAccessoryType.CheckBoxChecked: Add(LoadFromResource('ICON_CheckBoxChecked'));// Add(GetAccessoryFromResource('checkboxstyle.background', 'checked'));
+      TViewAccessoryType.User: Add(LoadFromResource('ICON_User'));
+      TViewAccessoryType.Password: Add(LoadFromResource('ICON_PWD'));
+      TViewAccessoryType.Down: Add(LoadFromResource('ICON_Down'));
+      TViewAccessoryType.Exit: Add(LoadFromResource('ICON_Exit'));
+      TViewAccessoryType.Finish: Add(LoadFromResource('ICON_Finish'));
+      TViewAccessoryType.Calendar: Add(LoadFromResource('ICON_Calendar'));
+      TViewAccessoryType.Cross: Add(LoadFromResource('ICON_Cross'));
+      TViewAccessoryType.Menu: Add(LoadFromResource('ICON_Menu'));
+      TViewAccessoryType.About: Add(LoadFromResource('ICON_About'));
+
+      TViewAccessoryType.Share: Add(LoadFromResource('ICON_Share'));
+      TViewAccessoryType.UserMsg: Add(LoadFromResource('ICON_MESSAGE'));
+      TViewAccessoryType.Cart: Add(LoadFromResource('ICON_Cart'));
+      TViewAccessoryType.Setting: Add(LoadFromResource('ICON_Setting'));
+      TViewAccessoryType.Edit: Add(LoadFromResource('ICON_Edit'));
+      TViewAccessoryType.Home: Add(LoadFromResource('ICON_Home'));
+      TViewAccessoryType.Heart: Add(LoadFromResource('ICON_Heart'));
+
+      TViewAccessoryType.Comment: Add(LoadFromResource('ICON_Comment'));
+      TViewAccessoryType.Collection: Add(LoadFromResource('ICON_Collection'));
+      TViewAccessoryType.Fabulous: Add(LoadFromResource('ICON_Fabulous'));
+      TViewAccessoryType.Image: Add(LoadFromResource('ICON_Image'));
+      TViewAccessoryType.Help: Add(LoadFromResource('ICON_Help'));
+      TViewAccessoryType.VCode: Add(LoadFromResource('ICON_VCode'));
+      TViewAccessoryType.Time: Add(LoadFromResource('ICON_Time'));
+      TViewAccessoryType.UserReg: Add(LoadFromResource('ICON_REGISTER'));
+      TViewAccessoryType.Scan: Add(LoadFromResource('ICON_Scan'));
+      TViewAccessoryType.Circle: Add(LoadFromResource('ICON_Circle'));
+      TViewAccessoryType.Location: Add(LoadFromResource('ICON_LOCATION'));
+
       TViewAccessoryType.UserDefined1: Add(GetAccessoryFromResource('userdefined1'));
       TViewAccessoryType.UserDefined2: Add(GetAccessoryFromResource('userdefined2'));
       TViewAccessoryType.UserDefined3: Add(GetAccessoryFromResource('userdefined3'));
@@ -7256,7 +7626,34 @@ begin
   end;
 end;
 
+function TViewAccessoryImageList.LoadFromResource(
+  const AStyleName: string): TBitmap;
+var
+  AImageStream: TResourceStream;
+begin
+  AImageStream := nil;
+  Result := TBitmap.Create;
+  try
+    try
+      AImageStream := TResourceStream.Create(HInstance, AStyleName, RT_RCDATA);
+      Result.LoadFromStream(AImageStream);
+    finally
+      FreeAndNil(AImageStream);
+    end;
+  except
+  end;
+end;
+
 { TViewImagesBrush }
+
+procedure TViewImagesBrush.Assign(Source: TPersistent);
+begin
+  if Source is TViewImagesBrush then begin
+    FImageIndex := TViewImagesBrush(Source).FImageIndex;
+    Self.Images := TViewImagesBrush(Source).Images;
+  end;
+  inherited;
+end;
 
 constructor TViewImagesBrush.Create(const ADefaultKind: TBrushKind;
   const ADefaultColor: TAlphaColor);
@@ -7337,6 +7734,13 @@ begin
   Result := -1;
 end;
 
+{ TAniCalculationsEx }
+
+function TAniCalculationsEx.GetDownPoint: TPointD;
+begin
+  Result := TView.GetRttiValue<TPointD>(Self, 'FDownPoint');
+end;
+
 { TScrollCalculations }
 
 constructor TScrollCalculations.Create(AOwner: TPersistent);
@@ -7366,11 +7770,6 @@ begin
   inherited;
   if (FScrollView <> nil) and not (csDestroying in FScrollView.ComponentState) then
     FScrollView.StopScrolling;
-end;
-
-function TScrollCalculations.GetDownPoint: TPointD;
-begin
-  Result := TView.GetRttiValue<TPointD>(Self, 'FDownPoint');
 end;
 
 { TScrollBarHelper }
@@ -7774,7 +8173,7 @@ begin
           TLayoutGravity.CenterVertical, TLayoutGravity.Center, TLayoutGravity.CenterVRight:
             // 居中
             VT := CurPos.Y + (LItemHeight - (VH + Control.Margins.Top + Control.Margins.Bottom)) * 0.5 + Control.Margins.Top;
-        else 
+        else
           begin
             case Control.Align of
               TAlignLayout.Top, TAlignLayout.MostTop:
@@ -7805,13 +8204,13 @@ begin
     if (WidthSize = TViewSize.WrapContent) then begin
       if LColumns > CtrlCount then
         LColumns := CtrlCount;
-      VW := LColumns * (LItemWidth + FHorizontalSpacing) + FHorizontalSpacing + Padding.Left + Padding.Right; 
+      VW := LColumns * (LItemWidth + FHorizontalSpacing) + FHorizontalSpacing + Padding.Left + Padding.Right;
       PW := GetParentMaxWidth;
       if (VW > PW) and (PW > 0) then
         VW := PW;
     end else
       VW := Width;
-    
+
     if (HeightSize = TViewSize.WrapContent) then begin
       VH := CurPos.Y + LItemHeight + Padding.Bottom;
       if FSpacingBorder then
@@ -7819,11 +8218,11 @@ begin
       PW := GetParentMaxHeight;
       if (VH > PW) and (PW > 0) then
         VH := PW;
-    end else 
+    end else
       VH := Height;
 
     if (WidthSize = TViewSize.WrapContent) or (HeightSize = TViewSize.WrapContent) then begin
-      if (Height <> VH) or (Width <> VW) then      
+      if (Height <> VH) or (Width <> VW) then
         SetBounds(Position.X, Position.Y, VW, VH);
     end;
 
@@ -8221,17 +8620,19 @@ begin
   K := $FFFFFF;
   J := -1;
   M := TabOrder;
-  for I := 0 to ParentControl.ControlsCount - 1 do begin
-    Item := ParentControl.Controls[I];
-    if (not Assigned(Item)) or (not Item.Visible) or (not Item.Enabled) or (not Item.CanFocus) then
-      Continue;
-    if (Item.TabOrder < K) and (Item.TabOrder > M) then begin
-      K := Item.TabOrder;
-      J := I;
+  if Assigned(ParentControl) then begin
+    for I := 0 to ParentControl.ControlsCount - 1 do begin
+      Item := ParentControl.Controls[I];
+      if (not Assigned(Item)) or (not Item.Visible) or (not Item.Enabled) or (not Item.CanFocus) then
+        Continue;
+      if (Item.TabOrder < K) and (Item.TabOrder > M) then begin
+        K := Item.TabOrder;
+        J := I;
+      end;
     end;
+    if J >= 0 then
+      ParentControl.Controls[J].SetFocus;
   end;
-  if J >= 0 then
-    ParentControl.Controls[J].SetFocus;
 end;
 
 function TControlHelper.SetFocusObject(V: TControl): Boolean;
@@ -8256,7 +8657,7 @@ end;
 { TViewHtmlText }
 
 type
-  TViewHtmlReadAttr = reference to procedure (var Item: THtmlTextItem; const Key, Value: string);  
+  TViewHtmlReadAttr = reference to procedure (var Item: THtmlTextItem; const Key, Value: string);
 
 procedure TViewHtmlText.Assign(Source: TPersistent);
 begin
@@ -8345,7 +8746,7 @@ var
     Include(Result, V);
   end;
 
-  procedure DrawText(const LText: string; const Item: THtmlTextItem; const LColor: TAlphaColor; 
+  procedure DrawText(const LText: string; const Item: THtmlTextItem; const LColor: TAlphaColor;
     var X, Y: Single; var S: TSizeF);
   begin
     TextSet.FillText(Canvas, RectF(X, Y, R.Right, R.Bottom), LText, Opacity, LColor,
@@ -8358,14 +8759,14 @@ var
   end;
 
   // Flag 非0时用于计算大小
-  procedure DrawWordWarpText(const LText: string; const Item: THtmlTextItem; const LColor: TAlphaColor; 
+  procedure DrawWordWarpText(const LText: string; const Item: THtmlTextItem; const LColor: TAlphaColor;
     var X, Y: Single; const LX, MW: Single; var S: TSizeF; Flag: Integer = 0);
   var
     J: Integer;
     P, PE, P1: PChar;
     LW: Single;
     LTmp: string;
-  begin  
+  begin
     if MW < CharW then
       Exit;
 
@@ -8387,8 +8788,8 @@ var
         end;
       end;
 
-      if Flag = 0 then begin 
-        TextSet.WordWrap := True; 
+      if Flag = 0 then begin
+        TextSet.WordWrap := True;
         DrawText(LText, Item, LColor, X, Y, S);
         TextSet.WordWrap := False;
       end else begin
@@ -8399,7 +8800,7 @@ var
       if S.Height > CharH then begin  // 超链接换行后，尾部不再跟其它内容
         Y := Y + S.Height;
         X := LX;
-      end;       
+      end;
 
     end else begin
       // 自动换行
@@ -8410,21 +8811,21 @@ var
         if J < 1 then Break;
 
         SetString(LTmp, P, Min(PE - P, J));
-        if J > 1 then begin 
+        if J > 1 then begin
           TextSet.TextSize(LTmp, S, Canvas.Scale);
           if X + S.Width > MW then begin
             P1 := P + J;
             while P1 > P do begin
-              SetString(LTmp, P, P1 - P);  
+              SetString(LTmp, P, P1 - P);
               TextSet.TextSize(LTmp, S, Canvas.Scale);
               if X + S.Width < MW then
                 Break;
               Dec(P1);
-            end; 
+            end;
             J := P1 - P;
             if J < 1 then Break;
           end;
-        end;   
+        end;
 
         if Flag = 0 then
           DrawText(LTmp, Item, LColor, X, Y, S)
@@ -8468,7 +8869,7 @@ var
         Continue;
       end;
 
-      SetString(LText, Item.P, Item.Len);   
+      SetString(LText, Item.P, Item.Len);
 
       if FReplace then
         LText := ReplaceValue(LText);
@@ -8484,7 +8885,7 @@ var
 
     S.Height := Y + S.Height;
   end;
-  
+
 var
   I: Integer;
   Item: THtmlTextItem;
@@ -8524,14 +8925,14 @@ begin
   if ASize <> nil then begin
     // 测算高度
     ASize.Width := S.Width;
-    ASize.Height := S.Height;  
-      
+    ASize.Height := S.Height;
+
     TextSet.WordWrap := LWordWarp;
     TextSet.Font.Assign(FFont);
     TextSet.Font.OnChanged := LFontChange;
-    
+
     Exit;
-  end;  
+  end;
 
   UpdateXY(X, Y, S);
   if LWordWarp then begin
@@ -8577,7 +8978,7 @@ begin
         DrawText(LText, Item, LColor, X, Y, S);
       end;
     end;
-    
+
   finally
     TextSet.WordWrap := LWordWarp;
     TextSet.Font.Assign(FFont);
@@ -8628,7 +9029,7 @@ var
   I: Integer;
 begin
   I := PointInLink(X, Y);
-  if I <> FLinkHot then begin 
+  if I <> FLinkHot then begin
     FLinkHot := I;
     if I >= 0 then
       Sender.Cursor := crHandPoint
@@ -8718,6 +9119,7 @@ end;
 
 procedure TViewHtmlText.ParseHtmlText(const Text: string);
 
+  {$WARNINGS OFF}
   procedure ReadProperty(var Item: THtmlTextItem; var P, PE: PChar; OnReadAttr: TViewHtmlReadAttr);
   var
     P1: PChar;
@@ -8731,7 +9133,7 @@ procedure TViewHtmlText.ParseHtmlText(const Text: string);
       while (P < PE) and (P^ <> '=') do
         Inc(P);
       if (P >= PE) then Break;
-      
+
       SetString(Key, P1, P - P1);
       Trim(Key);
 
@@ -8752,10 +9154,11 @@ procedure TViewHtmlText.ParseHtmlText(const Text: string);
         SetString(Value, P1, P - P1);
       end;
 
-      if Key <> '' then      
-        OnReadAttr(Item, Key, Value);       
+      if Key <> '' then
+        OnReadAttr(Item, Key, Value);
     end;
   end;
+  {$WARNINGS ON}
 
   procedure SetItem(var Item: THtmlTextItem; const LText: string);
   var
@@ -8778,7 +9181,7 @@ procedure TViewHtmlText.ParseHtmlText(const Text: string);
 
       if StrLComp(P, 'font', 4) = 0 then begin  // font
         Inc(P, 4);
-        ReadProperty(Item, P, PE, 
+        ReadProperty(Item, P, PE,
           procedure (var Item: THtmlTextItem; const Key, Value: string)
           begin
             if Key = 'color' then
@@ -8789,16 +9192,16 @@ procedure TViewHtmlText.ParseHtmlText(const Text: string);
         );
       end else if StrLComp(P, 'a ', 2) = 0 then begin  // a 超链接
         Inc(P, 1);
-        ReadProperty(Item, P, PE, 
+        ReadProperty(Item, P, PE,
           procedure (var Item: THtmlTextItem; const Key, Value: string)
           begin
-            if Key = 'href' then begin                
+            if Key = 'href' then begin
               if not Assigned(FLinkHrefs) then
                 FLinkHrefs := TStringList.Create;
-              Item.LinkURL := FLinkHrefs.IndexOf(Value);              
+              Item.LinkURL := FLinkHrefs.IndexOf(Value);
               if Item.LinkURL < 0 then begin
                 Item.LinkURL := FLinkHrefs.Count;
-                FLinkHrefs.Add(Value);              
+                FLinkHrefs.Add(Value);
               end;
               Item.Link := FLinkRangeCount;
               Inc(FLinkRangeCount);
@@ -8954,7 +9357,8 @@ procedure TViewHtmlText.ParseHtmlText(const Text: string);
             end;
           end;
           P := P1 + 1;
-          SkipSpace(P);
+          if P1^ <> '>' then
+            SkipSpace(P);
           LS := '';
           LE := '';
           NeedBreak := True;
@@ -9022,7 +9426,7 @@ end;
 
 function TViewHtmlText.PointInLink(const X, Y: Single): Integer;
 var
-  I: Integer;  
+  I: Integer;
   P: TPointF;
 begin
   P := PointF(X, Y);
@@ -9030,18 +9434,18 @@ begin
     if IsPointInRect(P, FLinkRange[I]) then begin
       Result := I;
       Exit;
-    end;        
+    end;
   end;
   Result := -1;
 end;
 
 function TViewHtmlText.ReplaceValue(const Value: string): string;
-begin   
-  Result := StringReplace(Value, '&#60;', '<', [rfReplaceAll]);   
-  Result := StringReplace(Result, '&#62;', '>', [rfReplaceAll]);   
-  Result := StringReplace(Result, '&#61;', '=', [rfReplaceAll]);   
+begin
+  Result := StringReplace(Value, '&#60;', '<', [rfReplaceAll]);
+  Result := StringReplace(Result, '&#62;', '>', [rfReplaceAll]);
+  Result := StringReplace(Result, '&#61;', '=', [rfReplaceAll]);
   Result := StringReplace(Result, '&lt;', '<', [rfReplaceAll]);
-  Result := StringReplace(Result, '&gt;', '>', [rfReplaceAll]);   
+  Result := StringReplace(Result, '&gt;', '>', [rfReplaceAll]);
 end;
 
 procedure TViewHtmlText.SetHtmlText(const Value: string);
@@ -9055,19 +9459,19 @@ begin
     if Pos('&', Value) > 0 then begin
       FReplace := True;
       FRealHtmlText := Value;
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#32;', ' ', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#33;', '!', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#34;', '"', [rfReplaceAll]);   
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#32;', ' ', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#33;', '!', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#34;', '"', [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&#35;', '#', [rfReplaceAll]);
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#36;', '$', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#37;', '%', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#38;', '&', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#39;', '''', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&#64;', '@', [rfReplaceAll]); 
-      FRealHtmlText := StringReplace(FRealHtmlText, '&nbsp;', ' ', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&amp;', '&', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&quot;', '"', [rfReplaceAll]);   
-      FRealHtmlText := StringReplace(FRealHtmlText, '&apos;', '''', [rfReplaceAll]);  
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#36;', '$', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#37;', '%', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#38;', '&', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#39;', '''', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&#64;', '@', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&nbsp;', ' ', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&amp;', '&', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&quot;', '"', [rfReplaceAll]);
+      FRealHtmlText := StringReplace(FRealHtmlText, '&apos;', '''', [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&cent;', #$FFE0, [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&pound;', #$FFE1, [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&yen;', #$FFE5, [rfReplaceAll]);
@@ -9076,7 +9480,7 @@ begin
       FRealHtmlText := StringReplace(FRealHtmlText, '&copy;', #$00a9, [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&reg;', #$00ae, [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&trade;', string(#8482), [rfReplaceAll]);
-      FRealHtmlText := StringReplace(FRealHtmlText, '&trade;', string(#8482), [rfReplaceAll]);   
+      FRealHtmlText := StringReplace(FRealHtmlText, '&trade;', string(#8482), [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&times;', #$00d7, [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&divide;', #$00f7, [rfReplaceAll]);
       FRealHtmlText := StringReplace(FRealHtmlText, '&plusmn;', #$00b1, [rfReplaceAll]);
@@ -9110,6 +9514,15 @@ begin
   if Source is TViewAccessory then begin
     Self.FAccessoryType := TViewAccessory(Source).FAccessoryType;
     Self.FAccessoryColor := TViewAccessory(Source).FAccessoryColor;
+    Self.FStyle := TViewAccessory(Source).FStyle;
+    FreeAndNil(Self.FAccessoryBmp);
+    if TViewAccessory(Source).FPathData = nil then
+      FreeAndNil(Self.FPathData)
+    else begin
+      if not Assigned(FPathData) then
+        FPathData := TPathData.Create;
+      FPathData.Assign(TViewAccessory(Source).FPathData);
+    end;
     DoChanged;
   end else
     inherited;
@@ -9133,15 +9546,15 @@ end;
 procedure TViewAccessory.DoChanged;
 begin
   case FStyle of
-    TViewAccessoryStyle.Icon:
-      DoIconChanged;
     TViewAccessoryStyle.Path:
       DoPathChanged(Self);
     TViewAccessoryStyle.Accessory:
       begin
         if FAccessoryType <> TViewAccessoryType.None then begin
           if not Assigned(FAccessoryBmp) then
-            FAccessoryBmp := TBitmap.Create;
+            FAccessoryBmp := TBitmap.Create
+          else
+            FAccessoryBmp.Clear(claNull);
           FAccessoryBmp.Assign(FAccessoryImages.GetAccessoryImage(FAccessoryType));
           if FAccessoryColor <> TAlphaColorRec.Null then
             ReplaceOpaqueColor(FAccessoryBmp, FAccessoryColor);
@@ -9151,36 +9564,6 @@ begin
   end;
   if Assigned(FOnChanged) then
     FOnChanged(Self);
-end;
-
-procedure TViewAccessory.DoIconChanged;
-var
-  AStream: TResourceStream;
-  AEnumName: string;
-begin
-  if FIcon = TViewIconType.None then
-    FreeAndNil(FAccessoryBmp)
-  else begin
-    try
-      AEnumName := GetENumName(TypeInfo(TViewIconType), Ord(FIcon));
-      AStream := TResourceStream.Create(HInstance, AEnumName, RT_RCDATA);
-      try
-        if not Assigned(FAccessoryBmp) then
-          FAccessoryBmp := TBitmap.Create
-        else
-          FAccessoryBmp.Clear(claNull);
-        FAccessoryBmp.LoadFromStream(AStream);
-        if Color = 0 then
-          ReplaceOpaqueColor(FAccessoryBmp, TAlphaColors.Dodgerblue)
-        else
-          ReplaceOpaqueColor(FAccessoryBmp, Color);
-      finally
-        FreeAndNil(AStream);
-      end;
-    except
-      FreeAndNil(FAccessoryBmp)
-    end;
-  end;
 end;
 
 procedure TViewAccessory.DoPathChanged(Sender: TObject);
@@ -9255,14 +9638,6 @@ begin
   end;
 end;
 
-procedure TViewAccessory.SetIcon(const Value: TViewIconType);
-begin
-  if FIcon <> Value then begin
-    FIcon := Value;
-    DoChanged;
-  end;
-end;
-
 procedure TViewAccessory.SetPathData(const Value: string);
 begin
   if Value = '' then begin
@@ -9290,6 +9665,7 @@ initialization
   FAccessoryImages := TViewAccessoryImageList.Create;
   {$IFDEF ANDROID}
   TView.InitAudioManager();
+  TView.InitFontGlyphs();
   DoInitFrameStatusHeight();
   DoInitNavigationBarHeight();
   {$ENDIF}

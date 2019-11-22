@@ -27,6 +27,10 @@ uses
 
   UI.Design.Bounds,
   UI.Design.GridColumns,
+  UI.Design.Accessory,
+
+  UI.Utils.SVGImage,
+  UI.Design.SVGImage,
 
   UI.Frame,
   {$IFDEF MSWINDOWS}
@@ -49,6 +53,7 @@ resourcestring
 type
   TViewControlEditor = class(TDefaultEditor)
   private
+    FCmdIndex: TArray<Integer>;
   protected
     procedure DesignerModified;
   public
@@ -65,7 +70,23 @@ type
     function GetAttributes: TPropertyAttributes; override;
   end;
 
+  TViewAccessoryProperty = class(TClassProperty)
+  private
+  protected
+    procedure Edit; override;
+  public
+    function GetAttributes: TPropertyAttributes; override;
+  end;
+
   TGridColumnsSettingsProperty = class(TClassProperty)
+  private
+  protected
+    procedure Edit; override;
+  public
+    function GetAttributes: TPropertyAttributes; override;
+  end;
+
+  TSVGImageProperty = class(TClassProperty)
   private
   protected
     procedure Edit; override;
@@ -107,6 +128,12 @@ type
   public
     procedure GetValues(Proc: TGetStrProc); override;
   end;
+
+{$IFDEF MSWINDOWS}
+var
+  [Weak] FCopyBackground: TObject = nil;
+  [Weak] FCopyDrawable: TObject = nil;
+{$ENDIF}
 
 {$IFDEF MSWINDOWS}
 // 设置环境变量
@@ -164,9 +191,13 @@ begin
   RegisterComponents(PageName, [TDrawableBrush]);
 
   RegisterComponentEditor(TView, TViewControlEditor);
+
   RegisterPropertyEditor(TypeInfo(TPatchBounds), TPersistent, '', TPatchBoundsProperty);
   RegisterPropertyEditor(TypeInfo(TGridColumnsSetting), TGridBase, '', TGridColumnsSettingsProperty);
   RegisterPropertyEditor(TypeInfo(TControl), TViewLayout, '', TLayoutComponentProperty);
+  RegisterPropertyEditor(TypeInfo(TViewAccessory), TPersistent, '', TViewAccessoryProperty);
+
+  RegisterPropertyEditor(TypeInfo(TSVGImage), TPersistent, '', TSVGImageProperty);
 
   //RegisterPropertyEditor(TypeInfo(TCustomImageList), TPersistent, '', TShareImageListProperty);
 
@@ -201,12 +232,14 @@ begin
       'MaxHeight',
       'Gravity',
       'Weight',
+      'CaptureDragForm',
       'Orientation',
       'OnClick',
       'OnPaint',
       'OnResize',
       { TScrollView }
       'ShowScrollBars',
+      'ScrollBars',
       'DragScroll',
       'DragOneWay',
       'ScrollSmallChangeFraction',
@@ -256,6 +289,7 @@ begin
       'OnValidating',
       'OnTyping',
       { TTextView }
+      'HtmlText',
       'Drawable',
       'GroupIndex',
       'OnDrawBackgroud',
@@ -301,6 +335,29 @@ begin
       'RowCount',
       'ShowColIndex',
       'ColumnsSettings',
+
+      { CalendarView }
+      'DateTime',
+      'DaysOfWeekDisabled',
+      'DaysOfWeekHighlighted',
+      'StartDate',
+      'EndDate',
+      'Language',
+      'RowHeight',
+      'RowLunarHeight',
+      'RowLunarPadding',
+      'RowPadding',
+      'TextSettingsOfLunar',
+      'TextSettingsOfTitle',
+      'TextSettingsOfWeeks',
+      'ViewModeMax',
+      'ViewModeMin',
+      'ViewModeStart',
+      'WeekStart',
+      'WeeksWidth',
+      'OnOwnerDrawCalendar',
+      'OnOwnerLunarData',
+      'OnClickView',
 
       'OnTitleClick',
       'OnColumnMoved',
@@ -364,10 +421,12 @@ begin
     ['CustomSize', 'WrapContent', 'FillParent']);
   AddEnumElementAliases(TypeInfo(TDrawablePosition),
     ['Left', 'Right', 'Top', 'Bottom', 'Center']);
+  AddEnumElementAliases(TypeInfo(TDrawableKind),
+    ['None', 'Circle', 'Ellipse']);
   AddEnumElementAliases(TypeInfo(TViewBorderStyle),
-    ['None', 'RectBorder', 'RectBitmap', 'LineEdit', 'LineTop', 'LineBottom', 'LineLeft', 'LineRight']);
+    ['None', 'RectBorder', 'RectBitmap', 'CircleBorder', 'EllipseBorder', 'LineEdit', 'LineTop', 'LineBottom', 'LineLeft', 'LineRight']);
   AddEnumElementAliases(TypeInfo(TViewBrushKind),
-    ['None', 'Solid', 'Gradient', 'Bitmap', 'Resource', 'Patch9Bitmap', 'AccessoryBitmap']);
+    ['None', 'Solid', 'Gradient', 'Bitmap', 'Resource', 'Patch9Bitmap', 'AccessoryBitmap', 'SVGImage']);
   AddEnumElementAliases(TypeInfo(TViewScroll),
     ['None', 'Horizontal', 'Vertical', 'Both']);
   AddEnumElementAliases(TypeInfo(TViewStretchMode),
@@ -384,25 +443,21 @@ begin
     ['PlanText', 'CheckBox', 'RadioButton', 'Image', 'ProgressBar', 'CustomDraw']);
   AddEnumElementAliases(TypeInfo(TGridFooterStyle),
     ['None', 'DataTotal', 'DataAverage', 'DataMin', 'DataMax']);
+  AddEnumElementAliases(TypeInfo(TViewAccessoryStyle),
+    ['Accessory', 'Path']);
   AddEnumElementAliases(TypeInfo(TViewAccessoryType),
     ['None', 'More', 'Checkmark', 'Detail', 'Ellipses', 'Flag', 'Back', 'Refresh',
      'Action', 'Play','Rewind', 'Forwards', 'Pause', 'Stop', 'Add', 'Prior',
-     'Next', 'ArrowUp', 'ArrowDown', 'ArrowLeft','ArrowRight', 'Reply',
+     'Next', 'BackWard', 'ForwardGo', 'ArrowUp', 'ArrowDown', 'ArrowLeft','ArrowRight', 'Reply',
      'Search', 'Bookmarks', 'Trash', 'Organize', 'Camera', 'Compose', 'Info',
      'Pagecurl', 'Details', 'RadioButton', 'RadioButtonChecked', 'CheckBox',
-     'CheckBoxChecked', 'UserDefined1', 'UserDefined2', 'UserDefined3'
+     'CheckBoxChecked', 'User', 'Password', 'Down', 'Exit', 'Finish', 'Calendar', 'Cross', 'Menu',
+     'About', 'Share', 'UserMsg', 'Cart', 'Setting', 'Edit', 'Home', 'Heart',
+     'Comment', 'Collection', 'Fabulous', 'Image', 'Help', 'VCode', 'Time', 'UserReg', 'Scan', 'Circle', 'Location',
+     'UserDefined1', 'UserDefined2', 'UserDefined3'
     ]);
-  AddEnumElementAliases(TypeInfo(TViewIconType),
-    ['None', 'AlarmClock', 'BarChart', 'Barcode', 'Bell', 'BookCover', 'BookCoverMinus', 'BookCoverPlus', 'BookMark', 'BookOpen',
-     'Calendar', 'Camera', 'Car', 'Clock', 'CloudDownload', 'CloudUpload', 'Cross', 'Document', 'Download', 'Earth', 'Email',
-     'Fax', 'FileList', 'FileMinus', 'FilePlus', 'Files', 'FileStar', 'FileTick', 'Flag', 'Folder', 'FolderMinus',
-     'FolderPlus'', ''FolderStar'', ''Home', 'Inbox', 'Incoming', 'ListBullets', 'ListCheckBoxes', 'ListImages', 'ListNumbered', 'ListTicked',
-     'Location', 'More', 'Note', 'Outgoing',
-     'PaperClip', 'Photo', 'PieChart', 'Pin', 'Presentation', 'Search', 'Settings', 'Share', 'ShoppingCart', 'Spanner', 'Speaker',
-     'Star', 'Tablet', 'Tag', 'Telephone', 'Telephone2', 'TelephoneBook', 'Tick', 'Timer', 'Trash', 'Upload',
-     'User', 'UserEdit', 'UserGroup', 'Users', 'UserSearch',
-     'VideoCamera', 'VideoPlayer', 'Viewer',
-     'Wifi', 'Window', 'Write']);
+  AddEnumElementAliases(TypeInfo(TCalendarViewType),
+    ['Days', 'Months', 'Years', 'Decades', 'Centuries']);
 end;
 
 procedure UnregisterAliases;
@@ -410,6 +465,7 @@ begin
   RemoveEnumElementAliases(TypeInfo(TLayoutGravity));
   RemoveEnumElementAliases(TypeInfo(TViewSize));
   RemoveEnumElementAliases(TypeInfo(TDrawablePosition));
+  RemoveEnumElementAliases(TypeInfo(TDrawableKind));
   RemoveEnumElementAliases(TypeInfo(TViewBorderStyle));
   RemoveEnumElementAliases(TypeInfo(TViewBrushKind));
   RemoveEnumElementAliases(TypeInfo(TViewScroll));
@@ -420,11 +476,15 @@ begin
   RemoveEnumElementAliases(TypeInfo(TRingViewStyle));
   RemoveEnumElementAliases(TypeInfo(TGridDataType));
   RemoveEnumElementAliases(TypeInfo(TGridFooterStyle));
+  RemoveEnumElementAliases(TypeInfo(TViewAccessoryStyle));
   RemoveEnumElementAliases(TypeInfo(TViewAccessoryType));
-  RemoveEnumElementAliases(TypeInfo(TViewIconType));
+  RemoveEnumElementAliases(TypeInfo(TCalendarViewType));
 end;
 
 { TViewControlEditor }
+
+type
+  TViewPri = class(TView);
 
 procedure TViewControlEditor.DesignerModified;
 begin
@@ -433,9 +493,11 @@ begin
 end;
 
 procedure TViewControlEditor.ExecuteVerb(Index: Integer);
+var
+  O: TDrawableBase;
 begin
   if not (Component is TControl) then Exit;
-  case Index of
+  case FCmdIndex[Index] of
     0:
       begin
         if TControl(Component).Index > 0 then
@@ -454,27 +516,85 @@ begin
       begin
         TControl(Component).Index := TControl(Component).Parent.ChildrenCount - 1;
       end;
+    4:
+      begin
+        FCopyBackground := TViewPri(Component).FBackground;
+      end;
+    5:
+      begin
+        try
+          TView(Component).Background := TDrawable(FCopyBackground);
+        except
+          MessageBox(0, PChar(Exception(ExceptObject).Message), 'Error', 48);
+        end;
+      end;
+    6:
+      begin
+        if TView.ExistRttiValue(Component, 'Drawable') then
+          FCopyDrawable := TView.GetRttiObject(Component, 'Drawable')
+        else
+          FCopyDrawable := TView.GetRttiObject(Component, 'FDrawable');
+      end;
+    7:
+      begin
+        try
+          if Component is TTextView then begin
+            TTextView(Component).Drawable := TDrawableIcon(FCopyDrawable)
+          end else if Component is TCustomEditView then begin
+            TCustomEditView(Component).Drawable := TDrawableIcon(FCopyDrawable)
+          end else
+            TView.InvokeMethod(Component, 'SetDrawable', [TDrawableIcon(FCopyDrawable)]);
+        except
+          MessageBox(0, PChar(Exception(ExceptObject).Message), 'Error', 48);
+        end;
+      end;
   end;
   Designer.SelectComponent(Component);
   DesignerModified;
 end;
 
 function TViewControlEditor.GetVerb(Index: Integer): string;
+const
+  CmdNames: TArray<string> = ['前移', '后移', '移至最前', '移至最后',
+    'Copy Background', 'Paste Background', 'Copy Drawable', 'Paste Drawable'];
 begin
-  case Index of
-    0: Result := '前移';
-    1: Result := '后移';
-    2: Result := '移至最前';
-    3: Result := '移至最后';
-  end;
+  Result := CmdNames[FCmdIndex[Index]];
 end;
 
 function TViewControlEditor.GetVerbCount: Integer;
+var
+  O: TObject;
 begin
-  if (Component is TControl) and (TControl(Component).Parent is TLinearLayout) then
-    Result := 4
-  else
+  SetLength(FCmdIndex, 20);
+  if (Component is TControl) and ((TControl(Component).Parent is TLinearLayout) or
+    (TControl(Component).Parent is TGridsLayout)) then
+  begin
+    Result := 4;
+    FCmdIndex[0] := 0;
+    FCmdIndex[1] := 1;
+    FCmdIndex[2] := 2;
+    FCmdIndex[3] := 3;
+  end else
     Result := 0;
+  if (Component is TView) then begin
+    FCmdIndex[Result] := 4;
+    Inc(Result);
+    if Assigned(FCopyBackground) then begin
+      FCmdIndex[Result] := 5;
+      Inc(Result);
+    end;
+    O := TView.GetRttiObject(Component, 'Drawable');
+    if not Assigned(O) then
+      O := TView.GetRttiObject(Component, 'FDrawable');
+    if Assigned(O) and (O is TDrawableBase) then begin
+      FCmdIndex[Result] := 6;
+      Inc(Result);
+      if Assigned(FCopyDrawable) then begin
+        FCmdIndex[Result] := 7;
+        Inc(Result);
+      end;
+    end;
+  end;
 end;
 
 { TPatchBoundsProperty }
@@ -600,7 +720,7 @@ begin
     Exit;
   Dialog := TGridColumnsDesigner.Create(nil);
   try
-    Dialog.Caption := 'GridView 列设计器';
+    Dialog.Caption := 'GridView 列设计器 (隐藏的列请通过点击“上一项”或“下一项”切换)';
     Dialog.Columns := TGridView(Component).Columns;
     if Dialog.ShowModal = mrOK then
       TGridView(Component).Columns.Assign(Dialog.Columns);
@@ -614,6 +734,59 @@ begin
   Result := [paMultiSelect, paSubProperties, paReadOnly, paDialog];
 end;
 
+{ TSVGImageProperty }
+
+procedure TSVGImageProperty.Edit;
+var
+  Component: TObject;
+  Dialog: TFrmDesignSVGImage;
+begin
+  Component := GetComponent(0);
+  if not (Component is TViewBrushBase) then
+    Exit;
+  Dialog := TFrmDesignSVGImage.Create(nil);
+  try
+    Dialog.Caption := 'SVG Image';
+    Dialog.LoadImage(TViewBrushBase(Component).SVGImage);
+    if Dialog.ShowModal = mrOK then
+      TViewBrushBase(Component).SVGImage := Dialog.Bmp;
+  finally
+    Dialog.Free;
+  end;
+end;
+
+function TSVGImageProperty.GetAttributes: TPropertyAttributes;
+begin
+  Result := [paMultiSelect, paSubProperties, paReadOnly, paDialog];
+end;
+
+{ TViewAccessoryProperty }
+
+procedure TViewAccessoryProperty.Edit;
+var
+  Component: TObject;
+  Dialog: TAccessoryDesigner;
+begin
+  Component := GetComponent(0);
+  if not (Component is TViewBrushBase) then
+    Exit;
+  Dialog := TAccessoryDesigner.Create(nil);
+  try
+    Dialog.Caption := 'Accessory Designer';
+    Dialog.Accessory := TViewBrushBase(Component).Accessory;
+    if Dialog.ShowModal = mrOK then begin
+      TViewBrushBase(Component).Accessory := Dialog.Accessory;
+    end;
+  finally
+    Dialog.Free;
+  end;
+end;
+
+function TViewAccessoryProperty.GetAttributes: TPropertyAttributes;
+begin
+  Result := [paMultiSelect, paSubProperties, paReadOnly, paDialog];
+end;
+
 initialization
   RegisterAliases;
   RegisterFmxClasses([TView, TLinearLayout, TRelativeLayout, TGridView,
@@ -621,5 +794,9 @@ initialization
 
 finalization
   UnregisterAliases;
+  {$IFDEF MSWINDOWS}
+  FCopyBackground := nil;
+  FCopyDrawable := nil;
+  {$ENDIF}
 
 end.

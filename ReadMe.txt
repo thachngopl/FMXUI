@@ -20,6 +20,8 @@ FMXUI  (YangYxd)
   TListViewEx 列表框视图
   TBadgeView 未读消息提示小红点
   
+  TCalendarView 日历组件，支持农历显示
+  
   TGridView 格子视图，可通过数据适配器实现各种功能
   TStringGridView 字符串格子视图
   TDBGridView 数据集格子视图
@@ -64,8 +66,7 @@ FMXUI  (YangYxd)
   
 【版权声明】
 
-  本源码库版权归 YangYxd 所有，保留所有权利。您可以免费使用此代码库于任何地方，但请在软件中注明。
-  本源码库遵守BSD开源协议，您可以修改本源码库的代码，但必须在修改后的代码中包含本项目代码中的版权协议。
+  本源码库遵守MID开源许可协议。
   
   版权所有 (C) 2016 YangYxd
   

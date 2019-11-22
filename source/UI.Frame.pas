@@ -186,6 +186,8 @@ type
     procedure SetParams(const Value: TFrameParams);
     function GetTitle: string;
     procedure SetTitle(const Value: string);
+    function GetDataString: string;
+    procedure SetDataString(const Value: string);
     function GetPreferences: TFrameState;
     function GetSharedPreferences: TFrameState;
     function GetParams: TFrameParams;
@@ -235,6 +237,10 @@ type
     function GetData: TValue; override;
     procedure SetData(const Value: TValue); override;
 
+    /// <summary>
+    /// 检测是否允许释放
+    /// </summary>
+    function DoCanFree(): Boolean; virtual;
     // 检查是否需要释放，如果需要，就释放掉
     function CheckFree(): Boolean;
     // 检查所属窗体是否还存在 Frame
@@ -263,6 +269,11 @@ type
     destructor Destroy; override;
 
     /// <summary>
+    /// 终止APP
+    /// </summary>
+    class procedure AppTerminate();
+
+    /// <summary>
     /// 设置 Frame 默认背景颜色
     /// </summary>
     class procedure SetDefaultBackColor(const Value: TAlphaColor);
@@ -283,6 +294,12 @@ type
     procedure ShowWaitDialog(const AMsg: string; ACancelable: Boolean = True); overload;
     procedure ShowWaitDialog(const AMsg: string; OnDismissListener: TOnDialogListener; ACancelable: Boolean = True); overload;
     procedure ShowWaitDialog(const AMsg: string; OnDismissListener: TOnDialogListenerA; ACancelable: Boolean = True); overload;
+
+    /// <summary>
+    /// 更新等待对话框消息内容
+    /// </summary>
+    procedure UpdateWaitDialog(const AMsg: string);
+
     /// <summary>
     /// 隐藏等待对话框
     /// </summary>
@@ -322,7 +339,11 @@ type
     /// <summary>
     /// 开始一个视图，并隐藏当前视图
     /// </summary>
-    function StartFrame(FrameClass: TFrameViewClass; const Title: string; const Data: Pointer; Ani: TFrameAniType = TFrameAniType.DefaultAni): TFrameView; overload;
+    function StartFrame(FrameClass: TFrameViewClass; const Title: string; const Data: TValue; Ani: TFrameAniType = TFrameAniType.DefaultAni): TFrameView; overload;
+    /// <summary>
+    /// 开始一个视图，并隐藏当前视图
+    /// </summary>
+    function StartFrame(FrameClass: TFrameViewClass; const Title: string; const DataString: string; Ani: TFrameAniType = TFrameAniType.DefaultAni): TFrameView; overload;
 
     /// <summary>
     /// 显示一个提示消息
@@ -403,6 +424,7 @@ type
     property IsUseDefaultBackColor: Boolean read FUseDefaultBackColor;
   published
     property Title: string read GetTitle write SetTitle;
+    property DataString: string read GetDataString write SetDataString;
     /// <summary>
     /// 背景颜色
     /// </summary>
@@ -426,6 +448,7 @@ type
 const
   CS_Title = 'cs_p_title';
   CS_Data = 'cs_p_data';
+  CS_DataStr = 'cs_p_data_str';
 
 var
   /// <summary>
@@ -566,6 +589,65 @@ procedure TFrameView.AnimatePlay(Ani: TFrameAniType; IsIn, SwitchFlag: Boolean;
     TFrameAnimator.AnimateFloat(Self, 'Position.X', NewValue, AEvent);
   end;
 
+  // 顶部移入移出, 右边进入
+  procedure DoTopMoveInOut();
+  var
+    LForm: TCustomForm;
+    Y: Single;
+  begin
+    if IsIn then begin
+      Self.Opacity := 1;
+      if not SwitchFlag then begin
+        Self.Position.Y := - Self.Height;
+        Y := 0;
+        LForm := Self.ParentForm;
+        if Assigned(LForm) then
+          Y := LForm.Padding.Top;
+        TFrameAnimator.AnimateFloat(Self, 'Position.Y', Y, AEvent);
+      end else if Assigned(AEvent) then
+        TFrameAnimator.DelayExecute(Self, AEvent, 0.2);
+    end else begin
+      if FinishIsFreeApp then begin
+        if Assigned(AEvent) then
+          AEvent(Self);
+        Exit;
+      end;
+      if SwitchFlag then
+        TFrameAnimator.AnimateFloat(Self, 'Position.Y', - Self.Height, AEvent, 0.1)
+      else if Assigned(AEvent) then
+        TFrameAnimator.DelayExecute(Self, AEvent, 0.65);
+    end;
+  end;
+
+  // 底部移入移出, 右边进入
+  procedure DoBottomMoveInOut();
+  var
+    LForm: TCustomForm;
+    Y: Single;
+  begin
+    if IsIn then begin
+      Self.Opacity := 1;
+      if not SwitchFlag then begin
+        Self.Position.Y := Self.Height;
+        Y := 0;
+        LForm := Self.ParentForm;
+        if Assigned(LForm) then
+          Y := LForm.Padding.Top;
+        TFrameAnimator.AnimateFloat(Self, 'Position.Y', Y, AEvent);
+      end else if Assigned(AEvent) then
+        TFrameAnimator.DelayExecute(Self, AEvent, 0.2);
+    end else begin
+      if FinishIsFreeApp then begin
+        if Assigned(AEvent) then
+          AEvent(Self);
+        Exit;
+      end;
+      if SwitchFlag then
+        TFrameAnimator.AnimateFloat(Self, 'Position.Y', Self.Height, AEvent, 0.1)
+      else if Assigned(AEvent) then
+        TFrameAnimator.DelayExecute(Self, AEvent, 0.65);
+    end;
+  end;
 
 begin
   if not Assigned(Self) or (csDestroying in ComponentState) then
@@ -575,12 +657,21 @@ begin
       TFrameAniType.DefaultAni:
         if not (DefaultAnimate in [TFrameAniType.None, TFrameAniType.DefaultAni]) then
           AnimatePlay(DefaultAnimate, IsIn, SwitchFlag, AEvent)
-        else if Assigned(AEvent) then
+        else if Assigned(AEvent) then begin
+          if IsIn then
+            Self.Opacity := 1
+          else
+            Self.Opacity := 0;
           AEvent(Self);
+        end;
       TFrameAniType.FadeInOut:
         DoFadeInOut;
       TFrameAniType.MoveInOut:
         DoMoveInOut;
+      TFrameAniType.TopMoveInOut:
+        DoTopMoveInOut;
+      TFrameAniType.BottomMoveInOut:
+        DoBottomMoveInOut;
     else
       begin
         // 无动画效果
@@ -596,20 +687,36 @@ begin
   end;
 end;
 
+class procedure TFrameView.AppTerminate;
+begin
+  try
+    {$IFDEF POSIX}
+      {$IFDEF DEBUG}
+      Application.Terminate;
+      {$ELSE}
+      Kill(0, SIGKILL);
+      {$ENDIF}
+    {$ELSE}
+    Application.Terminate;
+    {$ENDIF}
+  except
+  end;
+end;
+
 function TFrameView.CheckChildern: Boolean;
 var
   I: Integer;
 begin
-  if (Parent is TForm) then begin  
+  if (Parent is TForm) then begin
     Result := True;
-    if Parent.ChildrenCount >= 2 then begin    
+    if Parent.ChildrenCount >= 2 then begin
       for I := 0 to Parent.ChildrenCount - 1 do begin
         if (Parent.Children[I] <> Self) and (Parent.Children[I] is FMX.Forms.TFrame) then begin
           Result := False;
           Exit;
         end;
       end;
-    end;  
+    end;
   end else
     Result := False;
 end;
@@ -618,23 +725,23 @@ function TFrameView.CheckFree: Boolean;
 begin
   Result := False;
   if Assigned(Parent) then begin
-    if not Assigned(Parent.Parent) then begin
-      if (Parent is TForm) then begin
-        if (CheckChildern()) then begin
-          {$IFDEF POSIX}
-            {$IFDEF DEBUG}
-            (Parent as TForm).Close;
-            {$ELSE}
-            Kill(0, SIGKILL);
-            {$ENDIF}
-          {$ELSE}
-          (Parent as TForm).Close;
-          {$ENDIF}
-          Result := True;
-          Exit;
-        end;
-      end;
+    if (Parent is TForm) and DoCanFree then begin
+      {$IFDEF POSIX}
+        {$IFDEF DEBUG}
+        (Parent as TForm).Close;
+        {$ELSE}
+        Kill(0, SIGKILL);
+        {$ENDIF}
+      {$ELSE}
+      (Parent as TForm).Close;
+      {$ENDIF}
+      Result := True;
+      Exit;
     end;
+    {$IFDEF MSWINDOWS}
+    if Assigned(ParentForm) then
+      ParentForm.ReleaseCapture;
+    {$ENDIF}
     Parent.RemoveObject(Self);
     {$IFDEF ANDROID}
     if (not Assigned(Screen.FocusControl)) and (Assigned(ParentForm)) then
@@ -683,16 +790,16 @@ class function TFrameView.CreateFrame(Parent: TFmxObject;
         if (Parent is TCommonCustomForm) then begin
           TCommonCustomForm(Parent).Padding.Top :=
             TCommonCustomForm(Parent).Padding.Top + TView.GetStatusHeight;
-          TCommonCustomForm(Parent).Padding.Bottom :=
-            TCommonCustomForm(Parent).Padding.Bottom + TView.GetNavigationBarHeight;
+          //TCommonCustomForm(Parent).Padding.Bottom :=
+          //  TCommonCustomForm(Parent).Padding.Bottom + TView.GetNavigationBarHeight;
           Break;
         end;
         Parent := Parent.Parent;
       end;
     end;
   end;
-  {$ENDIF}      
-  
+  {$ENDIF}
+
 var
   Dlg: IDialog;
 begin
@@ -701,12 +808,12 @@ begin
     try
       {$IFDEF ANDROID}
       // 检测是否是第一次创建 Frame
-      if FFirstCreateFrame then begin  
+      if FFirstCreateFrame then begin
         DoUpdateParentFormState(Parent);
-        FFirstCreateFrame := False;  
+        FFirstCreateFrame := False;
       end;
       {$ENDIF}
-      
+
       // 检测是否是存在Dialog
       if Parent is TControl then begin
         Dlg := TDialog.GetDialog(Parent as TControl);
@@ -828,6 +935,11 @@ begin
   Result := True;
 end;
 
+function TFrameView.DoCanFree: Boolean;
+begin
+  Result := not Assigned(Parent.Parent) and CheckChildern();
+end;
+
 procedure TFrameView.DoCreate;
 begin
 end;
@@ -914,6 +1026,14 @@ begin
     Result := V.AsVarRec.VPointer;
 end;
 
+function TFrameView.GetDataString: string;
+begin
+  if (FParams = nil) or (not FParams.ContainsKey(CS_DataStr)) then
+    Result := ''
+  else
+    Result := FParams.Items[CS_DataStr].ToString;
+end;
+
 function TFrameView.GetIsDestroy: Boolean;
 begin
   Result := (not Assigned(Self)) or (csDestroying in ComponentState);
@@ -921,7 +1041,7 @@ end;
 
 function TFrameView.GetIsWaitDismiss: Boolean;
 begin
-  Result := IsDestroy or (Assigned(FWaitDialog) and (FWaitDialog.IsDismiss));
+  Result := IsDestroy or (not Assigned(FWaitDialog)) or FWaitDialog.IsDismiss;
 end;
 
 function TFrameView.GetParams: TFrameParams;
@@ -937,20 +1057,8 @@ begin
 end;
 
 function TFrameView.GetParentForm: TCustomForm;
-var
-  V: TFmxObject;
 begin
-  Result := nil;
-  if not Assigned(Self) then
-    Exit;
-  V := Parent;
-  while Assigned(V) do begin
-    if V is TCustomForm then begin
-      Result := V as TCustomForm;
-      Break;
-    end;
-    V := V.Parent;
-  end;
+  Result := UI.Base.GetParentForm(Self);
 end;
 
 function TFrameView.GetPreferences: TFrameState;
@@ -981,7 +1089,7 @@ function TFrameView.GetStatusColor: TAlphaColor;
       Result := F.Fill.Color;
   end;
   {$ENDIF}
-  
+
   {$IFDEF ANDROID}
   function ExecuteAndroid(): TAlphaColor;
   var
@@ -1043,7 +1151,7 @@ end;
 
 procedure TFrameView.HideWaitDialog;
 begin
-  if (not IsDestroy) and Assigned(FWaitDialog) then begin
+  if not IsWaitDismiss then begin
     FWaitDialog.Dismiss;
     FWaitDialog := nil;
   end;
@@ -1076,21 +1184,25 @@ end;
 procedure TFrameView.InternalShow(TriggerOnShow: Boolean;
   AOnFinish: TNotifyEventA; Ani: TFrameAniType; SwitchFlag: Boolean);
 begin
-  if FShowing then Exit;  
+  if FShowing then Exit;
+
   FShowing := True;
-  FDefaultAni := Ani;
+  if TriggerOnShow and (not SwitchFlag) then
+    FDefaultAni := Ani;
   if Title <> '' then begin
     Application.Title := Title;
     if Assigned(Parent) and (Parent is TCustomForm) then
       TCustomForm(Parent).Caption := Title;
-  end;    
+  end;
   if TriggerOnShow then
     DoShow()
   else
     DoReStart();
   {$IFDEF ANDROID}
+  {$IF CompilerVersion < 32}
   if (not Assigned(Screen.FocusControl)) and (Assigned(ParentForm)) then
     ParentForm.SetFocus;
+  {$IFEND}
   {$ENDIF}
   Opacity := 0;
   FHideing := True;
@@ -1140,6 +1252,14 @@ begin
     Params.Add(CS_Data, Value);
 end;
 
+procedure TFrameView.SetDataString(const Value: string);
+begin
+  if Params.ContainsKey(CS_DataStr) then
+    Params.Items[CS_DataStr] := Value
+  else if Value <> '' then
+    Params.Add(CS_DataStr, Value);
+end;
+
 class procedure TFrameView.SetDefaultBackColor(const Value: TAlphaColor);
 begin
   FDefaultBackColor := Value;
@@ -1147,15 +1267,15 @@ end;
 
 class procedure TFrameView.SetDefaultStatusColor(const Value: TAlphaColor);
 begin
-  if FDefaultStatusColor <> Value then begin  
+  if FDefaultStatusColor <> Value then begin
     FDefaultStatusColor := Value;
     {$IFDEF NEXTGEN}
     // 在移动平台时，设置状态条颜色时，如果背景颜色为透明，且状态条高度>0时，
     // 将背景颜色设为白色
     if (Value and $FF000000 > 0) and (FDefaultBackColor = 0){$IFDEF ANDROID} and (TView.GetStatusHeight > 0){$ENDIF} then
-      FDefaultBackColor := $fff1f2f3; 
+      FDefaultBackColor := $fff1f2f3;
     {$ENDIF}
-  end;  
+  end;
 end;
 
 procedure TFrameView.SetParams(const Value: TFrameParams);
@@ -1188,9 +1308,9 @@ procedure TFrameView.SetStatusColor(const Value: TAlphaColor);
     F.Fill.Color := Value;
   end;
   {$ENDIF}
-  
+
   {$IFDEF ANDROID}
-  procedure ExecuteAndroid();   
+  procedure ExecuteAndroid();
   var
     F: TCustomForm;
     {$IF CompilerVersion > 30}
@@ -1201,7 +1321,7 @@ procedure TFrameView.SetStatusColor(const Value: TAlphaColor);
       F := ParentForm;
       if not Assigned(F) then
         Exit;
-      F.Fill.Color := Value;        
+      F.Fill.Color := Value;
     end else begin
       {$IF CompilerVersion > 30} // Delphi 10.1 之后的版本
       if TJBuild_VERSION.JavaClass.SDK_INT < 21 then
@@ -1231,7 +1351,7 @@ begin
   ExecuteIOS();
   {$ENDIF}
   {$IFDEF ANDROID}
-  ExecuteAndroid(); 
+  ExecuteAndroid();
   {$ENDIF}
 end;
 
@@ -1282,7 +1402,7 @@ end;
 
 procedure TFrameView.ShowWaitDialog(const AMsg: string; ACancelable: Boolean);
 begin
-  if (not Assigned(FWaitDialog)) or (FWaitDialog.IsDismiss) then begin
+  if IsWaitDismiss then begin
     FWaitDialog := nil;
     FWaitDialog := TProgressDialog.Create(Self);
   end;
@@ -1298,7 +1418,7 @@ function TFrameView.StartFrame(FrameClass: TFrameViewClass;
   const Title: string; Ani: TFrameAniType): TFrameView;
 begin
   Result := MakeFrame(FrameClass);
-  if Assigned(Result) then begin  
+  if Assigned(Result) then begin
     Result.Title := Title;
     Hide(Ani);
     Result.Show(Ani, nil);
@@ -1306,12 +1426,24 @@ begin
 end;
 
 function TFrameView.StartFrame(FrameClass: TFrameViewClass; const Title: string;
-  const Data: Pointer; Ani: TFrameAniType): TFrameView;
+  const Data: TValue; Ani: TFrameAniType): TFrameView;
 begin
   Result := MakeFrame(FrameClass);
-  if Assigned(Result) then begin  
+  if Assigned(Result) then begin
     Result.Title := Title;
     Result.Data := Data;
+    Hide(Ani);
+    Result.Show(Ani, nil);
+  end;
+end;
+
+function TFrameView.StartFrame(FrameClass: TFrameViewClass; const Title,
+  DataString: string; Ani: TFrameAniType): TFrameView;
+begin
+  Result := MakeFrame(FrameClass);
+  if Assigned(Result) then begin
+    Result.Title := Title;
+    Result.DataString := DataString;
     Hide(Ani);
     Result.Show(Ani, nil);
   end;
@@ -1333,11 +1465,21 @@ begin
   end;
 end;
 
+procedure TFrameView.UpdateWaitDialog(const AMsg: string);
+begin
+  if IsWaitDismiss then
+    Exit;
+  if Assigned(FWaitDialog.RootView) then begin
+    FWaitDialog.Message := AMsg;
+    FWaitDialog.RootView.MessageView.Text := AMsg;
+  end;
+end;
+
 function TFrameView.StartFrame(FrameClass: TFrameViewClass;
   Params: TFrameParams; Ani: TFrameAniType): TFrameView;
 begin
   Result := MakeFrame(FrameClass);
-  if Assigned(Result) then begin  
+  if Assigned(Result) then begin
     Result.Params := Params;
     Hide(Ani);
     Result.Show(Ani, nil);
@@ -1347,7 +1489,7 @@ end;
 function TFrameView.StartFrame(FrameClass: TFrameViewClass; Ani: TFrameAniType): TFrameView;
 begin
   Result := MakeFrame(FrameClass);
-  if Assigned(Result) then begin  
+  if Assigned(Result) then begin
     Hide(Ani);
     Result.Show(Ani, nil);
   end;

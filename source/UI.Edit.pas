@@ -14,9 +14,12 @@ uses
   UI.Base, UI.Standard,
   {$IFDEF MSWINDOWS}UI.Debug, {$ENDIF}
   FMX.KeyMapping,
-  {$IFDEF ANDROID}
   FMX.VirtualKeyboard,
+  {$IFDEF ANDROID}
   FMX.VirtualKeyboard.Android,
+  {$ENDIF}
+  {$IFDEF IOS}
+  Macapi.Helpers, FMX.Platform.iOS, FMX.VirtualKeyboard.iOS,
   {$ENDIF}
   FMX.BehaviorManager, FMX.Forms, System.Messaging,
   FMX.Menus, FMX.Presentation.Messages, FMX.Controls.Presentation,
@@ -238,6 +241,9 @@ type
     function ITextInput.GetSelection = GetSelText;
     function ITextInput.GetSelectionRect = GetSelRect;
     function GetSelectionBounds: TRect;
+    {$IF CompilerVersion >= 33}
+    function GetSelectionPointSize: TSizeF;
+    {$ENDIF}
     function HasText: Boolean;
     {$IFDEF ANDROID}
     procedure UpdateAndroidKeyboardServiceState;
@@ -386,6 +392,8 @@ type
     procedure GoToTextBegin;
     procedure Replace(const AStartPos: Integer; const ALength: Integer; const AStr: string);
     function HasSelection: Boolean;
+
+    procedure HideInputMethod();
 
     property Caret: TCaret read GetSelfCaret write SetCaret;
     property CaretPosition: Integer read GetCaretPosition write SetCaretPosition;
@@ -538,7 +546,7 @@ begin
     TLinkObservers.ControlValueModified(AObservers);
 end;
 
-{$IFDEF ANDROID}
+{$IF Defined(ANDROID) and (CompilerVersion <= 32)}
 function PackText(const AText: string): string;
 begin
   if not AText.IsEmpty then
@@ -1683,7 +1691,7 @@ begin
   if Model.Password then begin
     T := FTextService.CombinedText;
     EditRectWidth := GetPasswordCharWidth;
-    WholeTextWidth := T.Length * EditRectWidth;
+    WholeTextWidth := T.Length * EditRectWidth + Padding.Left;
     Result := ContentRect.Left;
     if a > 0 then begin
       if a <= T.Length then
@@ -1705,8 +1713,9 @@ begin
       if System.Length(Rgn) > 0 then
         Result := Result + Rgn[High(Rgn)].Width;
     end;
+
     EditRectWidth := ViewRect.Width;
-    WholeTextWidth := ContentRect.Width;
+    WholeTextWidth := ContentRect.Width + Padding.Left;
     if WholeTextWidth < EditRectWidth then
       Result := CheckGravity(Result, EditRectWidth, WholeTextWidth);
   end;
@@ -1851,6 +1860,14 @@ begin
   Result := Rect(Model.SelStart, 0, Model.SelStart + Model.SelLength, 0);
 end;
 
+{$IF CompilerVersion >= 33}
+function TCustomEditView.GetSelectionPointSize: TSizeF;
+begin
+  Result.Width := Model.SelLength;
+  Result.Height := 0;
+end;
+{$ENDIF}
+
 function TCustomEditView.GetSelfCaret: TCaret;
 begin
   Result := Model.Caret;
@@ -1899,7 +1916,7 @@ begin
   Result.Top := Trunc(LineTop);
   Result.Bottom := Result.Top + LineHeight;
   {$IFNDEF ANDROID}
-  if GetOriginCaretPosition <= Model.SelStart then
+  if GetOriginCaretPosition <= Min(Model.SelStart, Model.SelStart + Model.SelLength) then
     Offset := FTextService.CombinedText.Length - FTextService.Text.Length
   else
     Offset := 0;
@@ -1979,6 +1996,23 @@ end;
 procedure TCustomEditView.HideCaret;
 begin
   Model.Caret.Hide;
+end;
+
+procedure TCustomEditView.HideInputMethod;
+{$IFDEF NEXTGEN}
+var
+  AService: IFMXVirtualKeyboardService;
+{$ENDIF}
+begin
+{$IFDEF NEXTGEN}
+  try
+    if TPlatformServices.Current.SupportsPlatformService(IFMXVirtualKeyboardService, AService) then
+    begin
+      AService.HideVirtualKeyboard();
+    end;
+  except
+  end;
+{$ENDIF}
 end;
 
 procedure TCustomEditView.HideLoupe;
@@ -2448,7 +2482,7 @@ begin
   if FTextService.CombinedText <> LText then
   begin
     FTextLayout.Text := LText;
-    {$IFNDEF ANDROID}
+    {$IF (not Defined(ANDROID)) or (CompilerVersion > 32)}
     FTextService.Text := LText;
     {$ELSE}
     FTextService.Text := PackText(LText);
@@ -2636,11 +2670,11 @@ begin
   begin
     FTextService.MaxLength := Model.MaxLength;
     FTextLayout.Text := Model.Text;
-{$IFNDEF ANDROID}
+    {$IF (not Defined(ANDROID)) or (CompilerVersion > 32)}
     FTextService.Text := Model.Text;
-{$ELSE}
+    {$ELSE}
     FTextService.Text := PackText(Model.Text);
-{$ENDIF}
+    {$ENDIF}
     if FTextService.CaretPosition.X > Model.Text.Length then
       SetCaretPosition(Text.Length);
   end;
@@ -2713,6 +2747,7 @@ end;
 procedure TCustomEditView.Resize;
 begin
   inherited Resize;
+  RealignContent;
   UpdateSpelling;
 end;
 
@@ -2954,6 +2989,16 @@ end;
 
 procedure TCustomEditView.SetTextInternal(const Value: string);
 begin
+{$IF CompilerVersion > 32}
+  {$IFDEF ANDROID}
+  FTextService.Text := Value;
+  Model.Text := Value;
+  {$ELSE}
+  Model.Text := Value;
+  FTextService.Text := Model.Text;
+  {$ENDIF}
+  FTextLayout.Text := Model.Text;
+{$ELSE}
   Model.Text := Value;
   FTextLayout.Text := Model.Text;
   {$IFNDEF ANDROID}
@@ -2961,6 +3006,7 @@ begin
   {$ELSE}
   FTextService.Text := PackText(Model.Text);
   {$ENDIF}
+{$ENDIF}
   UpdateCaretPosition;
 end;
 
@@ -3170,18 +3216,23 @@ end;
 procedure TCustomEditView.UpdateSelectionPointPositions;
 var
   R: TRectF;
+  IsParentFocused: Boolean;
 begin
-  Model.Caret.TemporarilyHidden := Model.HasSelection and
-    (Assigned(ParentControl)) and ParentControl.IsFocused;
+  IsParentFocused := (ParentControl <> nil) and ParentControl.IsFocused;
+  Model.Caret.TemporarilyHidden := Model.HasSelection and IsParentFocused;
   if HaveSelectionPickers then
   begin
-    FLeftSelPt.Visible := (Model.SelLength > 0) and ParentControl.IsFocused and (Model.SelStart + 1 >= FFirstVisibleChar);
-    FRightSelPt.Visible := (Model.SelLength > 0) and ParentControl.IsFocused and (GetCharX(Model.SelStart + Model.SelLength) < ContentRect.Right);
+    FLeftSelPt.Visible := (Model.SelLength > 0) and IsParentFocused and (Model.SelStart + 1 >= FFirstVisibleChar);
+    FRightSelPt.Visible := (Model.SelLength > 0) and IsParentFocused and (GetCharX(Model.SelStart + Model.SelLength) < ContentRect.Right);
 
     R := GetSelRect;
 
     FLeftSelPt.Position.X := R.Left;
-    FLeftSelPt.Position.Y := R.Top - 2 * FLeftSelPt.GripSize;
+    {$IF Defined(ANDROID) and (CompilerVersion > 32)}
+      FLeftSelPt.Position.Y := R.Bottom + 2 * FLeftSelPt.GripSize;
+    {$ELSE}
+      FLeftSelPt.Position.Y := R.Top - 2 * FLeftSelPt.GripSize;
+    {$ENDIF}
 
     FRightSelPt.Position.X := R.Right;
     FRightSelPt.Position.Y := R.Bottom + 2 * FLeftSelPt.GripSize;
@@ -3239,8 +3290,10 @@ end;
 procedure TCustomEditView.UpdateTextHeight;
 begin
   FTextHeight := 0;
-  TCanvasManager.MeasureCanvas.Font.Assign(FText.Font);
-  FTextHeight := TCanvasManager.MeasureCanvas.TextHeight('Lb|y'); // do not localize
+  if Assigned(FText) then begin
+    TCanvasManager.MeasureCanvas.Font.Assign(FText.Font);
+    FTextHeight := TCanvasManager.MeasureCanvas.TextHeight('Lb|y'); // do not localize
+  end;
 end;
 
 procedure TCustomEditView.UpdateTextLayout;

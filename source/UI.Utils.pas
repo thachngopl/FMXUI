@@ -24,6 +24,8 @@ uses
   Androidapi.JNI.GraphicsContentViewText,
   Androidapi.JNI.Util,
   Androidapi.JNI.App,
+  Androidapi.JNI.Os,
+  androidapi.jni.provider,
   FMX.Helpers.Android,
   {$ENDIF}
   {$IFDEF IOS}
@@ -33,6 +35,16 @@ uses
   iOSapi.CoreGraphics,
   Macapi.Helpers,
   FMX.Helpers.iOS,
+  {$ELSE}
+  {$IFDEF MACOS}
+  Macapi.ObjectiveC,
+  Macapi.CocoaTypes,
+  Macapi.Foundation,
+  Macapi.CoreGraphics,
+  Macapi.Helpers,
+  Macapi.AppKit,
+  FMX.Helpers.Mac,
+  {$ENDIF}
   {$ENDIF}
   FMX.BehaviorManager,
   System.NetEncoding,
@@ -76,6 +88,14 @@ function GetVersionName(): string;
 
 // 打开网址
 function OpenURL(const URL: string): Boolean;
+
+// Android: 自动升级 - 获取下载的apk文件保存目录
+function GetInstallDir(): string;
+// Android: 自动升级 - 安装apk （由于 Android 7.0 之后系统变化，所以需要 authorities）
+//  - ApkFileName 安装包文件名称 (不包含路径)
+//  - authorities 在AndroidManifest.xml中application段中自定义provider中android:authorities值
+function InstallApk(const ApkFileName, authorities: string): Boolean;
+
 // 调用移动平台的分享功能
 procedure Share(const AControl: TControl; const Title, Msg: string);
 
@@ -84,10 +104,12 @@ function CharCount(const S: string): Integer;
 
 // 字符串指针转为数字
 function PCharToIntDef(const S: pchar; Len: Integer; def: NativeInt = 0): NativeInt;
+function PCharToFloatDef(const S: pchar; Len: Integer; def: Double = 0): Double;
 function PHexToIntDef(const S: pchar; Len: Integer; def: NativeInt = 0): NativeInt;
+function PCharToStr(const S: PChar; Len: Integer): string;
 
 // Html颜色转为Color
-function HtmlColorToColor(const V: string): TAlphaColor;
+function HtmlColorToColor(const V: string; const DefaultValue: TAlphaColor = 0): TAlphaColor;
 function Text2Color(const s:string): TAlphaColor;
 function Hex2Color(const s: string): TAlphaColor;
 function RgbStrToColor(const s: string): TAlphaColor;
@@ -225,6 +247,51 @@ const
      -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1
      );
 
+{$IFDEF ANDROID}
+type
+  JFileProvider = interface;
+
+  JFileProviderClass = interface(JObjectClass)
+    ['{FACE4BE8-CC0C-4E4F-B7BE-CD3C13295C5D}']
+    function delete(uri : Jnet_Uri; selection : JString; selectionArgs : TJavaArray<JString>) : Integer; cdecl;// (Landroid/net/Uri;Ljava/lang/String;[Ljava/lang/String;)I A: $1
+    function getType(uri : Jnet_Uri) : JString; cdecl;                              // (Landroid/net/Uri;)Ljava/lang/String; A: $1
+    function getUriForFile(context : JContext; authority : JString; &file : JFile) : Jnet_Uri; cdecl;// (Landroid/content/Context;Ljava/lang/String;Ljava/io/File;)Landroid/net/Uri; A: $9
+    function init : JFileProvider; cdecl;                                       // ()V A: $1
+    function insert(uri : Jnet_Uri; values : JContentValues) : Jnet_Uri; cdecl;         // (Landroid/net/Uri;Landroid/content/ContentValues;)Landroid/net/Uri; A: $1
+    function onCreate : boolean; cdecl;                                         // ()Z A: $1
+    function openFile(uri : Jnet_Uri; mode : JString) : JParcelFileDescriptor; cdecl;// (Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor; A: $1
+    function query(uri : Jnet_Uri; projection : TJavaArray<JString>; selection : JString; selectionArgs : TJavaArray<JString>; sortOrder : JString) : JCursor; cdecl;// (Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor; A: $1
+    function update(uri : Jnet_Uri; values : JContentValues; selection : JString; selectionArgs : TJavaArray<JString>) : Integer; cdecl;// (Landroid/net/Uri;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I A: $1
+    procedure attachInfo(context : JContext; info : JProviderInfo) ; cdecl;     // (Landroid/content/Context;Landroid/content/pm/ProviderInfo;)V A: $1
+  end;
+
+  //[JavaSignature('android/support/v4/content/FileProvider$SimplePathStrategy')]
+  [JavaSignature('android/support/v4/content/FileProvider')]
+  JFileProvider = interface(JObject)
+    ['{03ED248A-3365-42CC-AD1E-ACA3A69269EF}']
+    function delete(uri : Jnet_Uri; selection : JString; selectionArgs : TJavaArray<JString>) : Integer; cdecl;// (Landroid/net/Uri;Ljava/lang/String;[Ljava/lang/String;)I A: $1
+    function getType(uri : Jnet_Uri) : JString; cdecl;                              // (Landroid/net/Uri;)Ljava/lang/String; A: $1
+    function insert(uri : Jnet_Uri; values : JContentValues) : Jnet_Uri; cdecl;         // (Landroid/net/Uri;Landroid/content/ContentValues;)Landroid/net/Uri; A: $1
+    function onCreate : boolean; cdecl;                                         // ()Z A: $1
+    function openFile(uri : Jnet_Uri; mode : JString) : JParcelFileDescriptor; cdecl;// (Landroid/net/Uri;Ljava/lang/String;)Landroid/os/ParcelFileDescriptor; A: $1
+    function query(uri : Jnet_Uri; projection : TJavaArray<JString>; selection : JString; selectionArgs : TJavaArray<JString>; sortOrder : JString) : JCursor; cdecl;// (Landroid/net/Uri;[Ljava/lang/String;Ljava/lang/String;[Ljava/lang/String;Ljava/lang/String;)Landroid/database/Cursor; A: $1
+    function update(uri : Jnet_Uri; values : JContentValues; selection : JString; selectionArgs : TJavaArray<JString>) : Integer; cdecl;// (Landroid/net/Uri;Landroid/content/ContentValues;Ljava/lang/String;[Ljava/lang/String;)I A: $1
+    procedure attachInfo(context : JContext; info : JProviderInfo) ; cdecl;     // (Landroid/content/Context;Landroid/content/pm/ProviderInfo;)V A: $1
+  end;
+
+  TJFileProvider = class(TJavaGenericImport<JFileProviderClass, JFileProvider>)
+  end;
+
+const
+  TJFileProviderMETA_DATA_FILE_PROVIDER_PATHS = 'android.support.FILE_PROVIDER_PATHS';
+  TJFileProviderTAG_ROOT_PATH = 'root-path';
+  TJFileProviderTAG_FILES_PATH = 'files-path';
+  TJFileProviderTAG_CACHE_PATH = 'cache-path';
+  TJFileProviderTAG_EXTERNAL = 'external-path';
+  TJFileProviderATTR_NAME = 'name';
+  TJFileProviderATTR_PATH = 'path';
+{$ENDIF}
+
 {$IFDEF MSWINDOWS}
 type
   TGetTickCount64 = function: Int64;
@@ -276,6 +343,13 @@ function HideMobilePhone(const Mobile: string ):String;
 begin
   Result := Copy(Mobile, 1, 3) + '****' + Copy(Mobile, 8, 4);
 end;
+
+{$WARNINGS OFF}
+function CharInSet(C: Char; const CharSet: TSysCharSet): Boolean;
+begin
+  Result := C in CharSet;
+end;
+{$WARNINGS ON}
 
 type
   TRGBA = record
@@ -433,7 +507,7 @@ begin
   P := PChar(Value);
   if (P^ <> '1') then Exit;
   Inc(P);
-  if not P^.IsInArray(['3', '4','5', '7', '8']) then Exit;
+  if not P^.IsInArray(['3', '4','5', '6', '7', '8', '9']) then Exit;
   //if not System.SysUtils.CharInSet(P^, ['3', '4','5', '7', '8']) then Exit;
   //if not (P^ in ['3', '4','5', '7', '8']) then Exit;
   Inc(P);
@@ -585,11 +659,66 @@ begin
   else
     Result := False;
 end;
+{$ELSE} {$IFDEF MACOS}
+var
+  NSU: NSUrl;
+  Workspace : NSWorkspace;
+begin
+  NSU := StrToNSUrl(URL);
+  Workspace := TNSWorkspace.Create;
+  exit(Workspace.openURL(NSU));
+end;
 {$ELSE}
 begin
   Result := ShellExecute(0, 'OPEN', PChar(URL), nil, nil, SW_SHOWMAXIMIZED) > 32;
 end;
-{$ENDIF IOS}{$ENDIF ANDROID}
+{$ENDIF MACOS}{$ENDIF IOS}{$ENDIF ANDROID}
+
+function GetInstallDir(): string;
+begin
+  {$IFDEF ANDROID}
+  // 说明：将 file_paths.xml 添加到 res/xml 中
+  Result := JStringToString(TAndroidHelper.Activity.getFilesDir.getPath()) + '/';
+  {$ELSE}
+  Result := '';
+  {$ENDIF}
+end;
+
+function InstallApk(const ApkFileName, authorities: string): Boolean;
+
+  {$IFDEF ANDROID}
+  procedure Exec();
+  var
+    Intent: JIntent;
+    f: JFile;
+    uri: Jnet_Uri;
+  begin
+    f := TJFile.JavaClass.init(StringToJString(GetInstallDir() + ApkFileName));
+    Intent := TJIntent.Create;
+    Intent.setAction(TJIntent.JavaClass.ACTION_VIEW);
+    if TJBuild_VERSION.JavaClass.SDK_INT >= 24 then begin
+      // provider authorities
+      uri := TJFileProvider.JavaClass.getUriForFile(
+        {$IF CompilerVersion > 27}TAndroidHelper.Context{$ELSE}SharedActivityContext{$ENDIF},
+        StringToJString(authorities), f);
+      intent.addFlags(TJIntent.JavaClass.FLAG_GRANT_READ_URI_PERMISSION);
+      intent.setDataAndType(uri, StringToJString('application/vnd.android.package-archive'));
+    end else begin
+      Intent.setDataAndType(TJnet_Uri.JavaClass.fromFile(f),
+        StringToJString('application/vnd.android.package-archive'));
+    end;
+    TAndroidHelper.Activity.startActivity(Intent);
+  end;
+  {$ENDIF}
+
+begin
+  {$IFDEF ANDROID}
+  Exec();
+  Result := True;
+  {$ELSE}
+  Result := False;
+  {$ENDIF}
+end;
 
 procedure Share(const AControl: TControl; const Title, Msg: string);
 
@@ -625,6 +754,11 @@ begin
   {$ENDIF}
 end;
 
+function PCharToStr(const S: PChar; Len: Integer): string;
+begin
+  SetString(Result, S, Len);
+end;
+
 function PCharToIntDef(const S: pchar; Len: Integer; def: NativeInt = 0): NativeInt;
 var
   I: Integer;
@@ -638,6 +772,32 @@ begin
       Exit;
     end;
     result := (result * 10) + V;
+  end;
+end;
+
+function PCharToFloatDef(const S: pchar; Len: Integer; def: Double = 0): Double;
+var
+  I, K, V, M: Integer;
+begin
+  Result := 0;
+  K := 0;
+  M := 10;
+  for i := 0 to len - 1 do begin
+    V := Convert[Ord(s[i])];
+    if (s[i] = '.') and (k = 0) then Inc(k);
+    if (V < 0) then begin
+      if (k > 1) then begin
+        Result := def;
+        Exit;
+      end;
+    end else begin
+      if k = 0 then
+        Result := (Result * 10) + V
+      else begin
+        Result := Result + V / M;
+        M := M * 10;
+      end;
+    end;
   end;
 end;
 
@@ -711,6 +871,8 @@ begin
   if (s='purple') then result:=TAlphaColorRec.Purple else
   if (s='teal') then result:=TAlphaColorRec.Teal else
   if (s='maroon') then result:=TAlphaColorRec.Maroon else
+  if (s='pink') then result:=TAlphaColorRec.Pink else
+  if (s='orange') then result:=TAlphaColorRec.Orange else
   if (Length(s) = 6) then result := StrToIntDef('$ff' + s, 0)
 end;
 
@@ -742,16 +904,56 @@ begin
   end;
 end;
 
-function HtmlColorToColor(const V: string): TAlphaColor;
+function RgbaStrToColor(const s: string): TAlphaColor;
+var
+  P, PE, P1: PChar;
 begin
-  Result := 0;
+  Result := TAlphaColorRec.Black;
+  P := PChar(s);
+  Inc(P, 4);
+  PE := P + Length(S);
+  SkipSpace(P);
+  P1 := P;
+  while (P < PE) and (not CharInSet(P^, [',',')',' '])) do Inc(P);
+  TAlphaColorRec(Result).R := PCharToIntDef(P1, P - P1, 0);
+  Inc(P);
+  SkipSpace(P);
+  if P < PE then begin
+    P1 := P;
+    while (P < PE) and (not CharInSet(P^, [',',')',' '])) do Inc(P);
+    TAlphaColorRec(Result).G := PCharToIntDef(P1, P - P1, 0);
+    Inc(P);
+    SkipSpace(P);
+    if P < PE then begin
+      P1 := P;
+      while (P < PE) and (not CharInSet(P^, [',',')',' '])) do Inc(P);
+      TAlphaColorRec(Result).B := PCharToIntDef(P1, P - P1, 0);
+      Inc(P);
+      SkipSpace(P);
+      if P < PE then begin
+        P1 := P;
+        while (P < PE) and (not CharInSet(P^, [',',')',' '])) do Inc(P);
+        TAlphaColorRec(Result).A := Round(PCharToFloatDef(P1, P - P1, 0) * 255);
+      end;
+    end;
+  end;
+end;
+
+function HtmlColorToColor(const V: string; const DefaultValue: TAlphaColor): TAlphaColor;
+begin
+  Result := DefaultValue;
   if V = '' then Exit;
   case PChar(V)^ of
     '#': Result := Hex2Color(V);
-    '$': Result := StrToIntDef(V, 0);
+    '$': Result := StrToIntDef(V, DefaultValue);
   else
-    if PDWORD(PChar(V))^ = PDWORD(PChar('rgb('))^ then begin
-      Result := RgbStrToColor(V)
+    if Length(V) > 9 then begin
+      if PInt64(PChar(V))^ = PInt64(PChar('rgb('))^ then begin
+        Result := RgbStrToColor(V)
+      end else if (PInt64(PChar(V))^ = PInt64(PChar('rgba'))^) and (V.Chars[4] = '(') then begin
+        Result := RgbaStrToColor(V)
+      end else
+        Result := Text2Color(V)
     end else
       Result := Text2Color(V)
   end;

@@ -41,6 +41,7 @@ type
   /// </summary>
   IListAdapter = interface
     ['{5CC5F4AB-2D8C-4A84-98A7-51566E38EA47}']
+    function DisableCache: Boolean;
     function GetCount: Integer;
     function GetItemID(const Index: Integer): Int64;
     function GetItem(const Index: Integer): Pointer;
@@ -63,7 +64,7 @@ type
     H: Single;
   end;
 
-  TListDividerView = class(TView);   
+  TListDividerView = class(TView);
 
   TListTextItem = class(TTextView)
   private const
@@ -134,7 +135,7 @@ type
     //FItemViews: TDictionary<Pointer, Integer>; // 当前显示的控件及索引号
     FItemViews: TIntHash; // 当前显示的控件及索引号
     FItemClick: TDictionary<Pointer, TNotifyEvent>; // 当前显示的控件的原始事件字典
-    
+
     FFirstRowIndex: Integer;  // 当前显示的第一行行号
     FLastRowIndex: Integer;   // 当前显示的最后一行行号
     FCount: Integer;          // 列表项总数
@@ -226,6 +227,8 @@ type
     /// </summary>
     procedure RemoveFooterView();
 
+    procedure PullRefreshStart;
+
     /// <summary>
     /// 当前显示的首行索引号
     /// </summary>
@@ -246,6 +249,8 @@ type
     /// 当前真实显示的列宽
     /// </summary>
     property AbsoluteColumnWidth: Single read GetAbsoluteColumnWidth;
+
+    property State: TListViewState read FState write FState;
   end;
 
   /// <summary>
@@ -358,10 +363,12 @@ type
 
     // 清空数据
     procedure Clear;
-     
+
     // 通知数据发生改变
     procedure NotifyDataChanged; virtual;
 
+    // 刷新开始
+    procedure PullRefreshStart(); override;
     // 刷新完成
     procedure PullRefreshComplete();
     // 加载更多完成
@@ -521,9 +528,10 @@ type
     procedure ItemMeasureHeight(const Index: Integer; var AHeight: Single); virtual;
   protected
     { IListAdapter }
+    function DisableCache: Boolean; virtual;
     function GetCount: Integer; virtual; abstract;
-    function GetItem(const Index: Integer): Pointer; virtual; abstract;
-    function IndexOf(const AItem: Pointer): Integer; virtual; abstract;
+    function GetItem(const Index: Integer): Pointer; virtual;
+    function IndexOf(const AItem: Pointer): Integer; virtual;
     function GetView(const Index: Integer; ConvertView: TViewBase; Parent: TViewGroup): TViewBase; virtual; abstract;
   public
     constructor Create();
@@ -596,7 +604,7 @@ type
     procedure Add(const V: TArray<string>); overload; virtual;
     procedure Insert(const Index: Integer; const V: string); virtual;
     procedure Delete(const Index: Integer); virtual;
-    procedure SetArrayLength(const ACount: Integer);
+    procedure SetArrayLength(const ACount: Integer); virtual;
     property Items[const Index: Integer]: string read GetItemValue write SetItemValue; default;
     property Strings: TStrings read GetList write SetList;
     property StringArray: TArray<string> read GetArray write SetArray;
@@ -637,9 +645,11 @@ type
     procedure SetChecks(const Value: TArray<Boolean>);
     function GetChecks: TArray<Boolean>;
   protected
+    function DisableCache: Boolean; override;
     procedure DoCheckChange(Sender: TObject);
     function GetView(const Index: Integer; ConvertView: TViewBase; Parent: TViewGroup): TViewBase; override;
   public
+    procedure SetArrayLength(const ACount: Integer); override;
     procedure Insert(const Index: Integer; const V: string); override;
     procedure Delete(const Index: Integer); override;
     property Checks: TArray<Boolean> read GetChecks write SetChecks;
@@ -682,6 +692,7 @@ type
     constructor Create;
     destructor Destroy; override;
     procedure Clear;
+    procedure DeleteSelf;
 
     procedure Add(const ANode: TTreeListNode<T>);
     procedure Remove(const ANode: TTreeListNode<T>);
@@ -704,13 +715,13 @@ type
   /// </summary>
   TCustomTreeListDataAdapter<T> = class(TListAdapterBase)
   private
-    FRoot: TTreeListNode<T>;
-    FList: TList<TTreeListNode<T>>;
     FUpdateRef: Integer;
     function GetNodes(const Index: Integer): TTreeListNode<T>;
     function GetNodeCount: Integer;
     procedure AddListItem(const Parent: TTreeListNode<T>);
   protected
+    FRoot: TTreeListNode<T>;
+    FList: TList<TTreeListNode<T>>;
     function GetCount: Integer; override;
     function GetItem(const Index: Integer): Pointer; override;
     function IndexOf(const AItem: Pointer): Integer; override;
@@ -780,11 +791,11 @@ begin
       FContentViews.FHeader.DoUpdateState(TListViewState.PullDownFinish, 0);
       FContentViews.FState := TListViewState.PullDownFinish;
       if Assigned(FOnPullRefresh) then
-        FOnPullRefresh(Self); 
+        FOnPullRefresh(Self);
       Exit;
-    end; 
+    end;
   end;
-  
+
   // 上拉加载更多
   if FEnablePullLoad then begin
     if Assigned(FContentViews) and (FContentViews.FState = TListViewState.PullUpOK) then
@@ -993,9 +1004,9 @@ begin
       Height - Padding.Bottom - Padding.Top);
 
     inherited DoRealign;
-    
+
     // 固定列宽
-    if FContentViews.FColumnWidth > 0 then begin  
+    if FContentViews.FColumnWidth > 0 then begin
       I := AbsoluteColumnCount;
       if I <> FContentViews.FLastColumnCount then
         DoColumnCountChange(I);
@@ -1175,40 +1186,42 @@ begin
     SetLength(FItemsPoints, I);
 
   FContentBounds^ := TRectD.Empty;
-  if Length(FItemsPoints) = 0 then
-    Exit;
-
-  ItemDefaultH := FAdapter.ItemDefaultHeight;
+  H := 0;
   DividerH := GetDividerHeight;
 
-  // 计算出高度
-  H := 0;
-  LColCount := FContentViews.AbsoluteColumnCount;
-  if LColCount > 1 then begin
-    MH := 0;
-    for I := 0 to FCount - 1 do begin
-      MH := Max(FItemsPoints[i].H, MH);
-      if (I > 0) and ((I + 1) mod LColCount = 0) then begin
+  if Length(FItemsPoints) > 0 then begin
+
+    ItemDefaultH := FAdapter.ItemDefaultHeight;
+
+    // 计算出高度
+    LColCount := FContentViews.AbsoluteColumnCount;
+    if LColCount > 1 then begin
+      MH := 0;
+      for I := 0 to FCount - 1 do begin
+        MH := Max(FItemsPoints[i].H, MH);
+        if (I > 0) and ((I + 1) mod LColCount = 0) then begin
+          if MH = 0 then
+            H := H + DividerH + ItemDefaultH
+          else
+            H := H + DividerH + MH;
+          MH := 0;
+        end;
+      end;
+      if FCount mod LColCount > 0 then begin
         if MH = 0 then
           H := H + DividerH + ItemDefaultH
         else
           H := H + DividerH + MH;
-        MH := 0;
+      end;
+    end else begin
+      for I := 0 to FCount - 1 do begin
+        if FItemsPoints[i].H = 0 then
+          H := H + DividerH + ItemDefaultH
+        else
+          H := H + DividerH + FItemsPoints[i].H;
       end;
     end;
-    if FCount mod LColCount > 0 then begin
-      if MH = 0 then
-        H := H + DividerH + ItemDefaultH
-      else
-        H := H + DividerH + MH;
-    end;
-  end else begin
-    for I := 0 to FCount - 1 do begin
-      if FItemsPoints[i].H = 0 then
-        H := H + DividerH + ItemDefaultH
-      else
-        H := H + DividerH + FItemsPoints[i].H;
-    end;
+
   end;
 
   FContentBounds.Right := FContentViews.Width;
@@ -1420,6 +1433,12 @@ begin
     FContentViews.DoPullRefreshComplete;
 end;
 
+procedure TListViewEx.PullRefreshStart;
+begin
+  if Assigned(FContentViews) then
+    FContentViews.PullRefreshStart;
+end;
+
 procedure TListViewEx.RemoveFooterView;
 begin
   FContentViews.RemoveFooterView;
@@ -1518,7 +1537,7 @@ begin
     FDividerHeight := Value;
     if csDesigning in ComponentState then
       Exit;
-    if not (csLoading in ComponentState) then begin     
+    if not (csLoading in ComponentState) then begin
       FLocalDividerHeight := FDividerHeight;
       RealignContent;
       Invalidate;
@@ -1580,11 +1599,9 @@ procedure TListViewContent.AddControlToCacle(const ItemType: Integer;
 var
   List: TListViewList;
 begin
-  if not FCacleViews.ContainsKey(Itemtype) then begin
+  if not FCacleViews.TryGetValue(ItemType, List) then begin
     List := TListViewList.Create;
     FCacleViews.Add(ItemType, List);
-  end else begin
-    List := FCacleViews[ItemType];
   end;
   Value.Visible := False;
   Value.OnClick := nil;
@@ -1841,20 +1858,40 @@ begin
             if Assigned(FHeader) then
               H := (FHeader as TControl).Height;
             if H > 0 then begin
-              FHeader.DoUpdateState(TListViewState.None, 0);
+//              FHeader.DoUpdateState(TListViewState.None, 0);
+//
+//              ListView.FContentBounds.Bottom := ListView.FContentBounds.Bottom - H;
+//              ListView.DoUpdateScrollingLimits(True, 0);
+//
+//              FState := TListViewState.None;
+//              FLastScrollValue := FLastScrollValue - H;
+//              ListView.VScrollBarValue := ListView.VScrollBarValue - H;
 
               ListView.FContentBounds.Bottom := ListView.FContentBounds.Bottom - H;
               ListView.DoUpdateScrollingLimits(True, 0);
 
-              FState := TListViewState.None;
+              FState := TListViewState.PullChangeing;
               FLastScrollValue := FLastScrollValue - H;
               ListView.VScrollBarValue := ListView.VScrollBarValue - H;
+
+              TFrameAnimator.DelayExecute(FHeader as TControl,
+                procedure (Sender: TObject)
+                begin
+                  try
+                    if (FState = TListViewState.PullChangeing) then begin
+                      FState := TListViewState.None;
+                      FHeader.DoUpdateState(TListViewState.None, 0);
+                    end;
+                  except
+                  end;
+                end
+              , 0.22);
             end;
           end;
         except
         end;
       end
-    , 0.5);
+    , 0.3);
   end;
 end;
 
@@ -1986,7 +2023,7 @@ procedure TListViewContent.DoRealign;
       H := Ctrl.Height;
 
       //LogD(Format('V: %.2f, ScrollV: %.2f, Top: %.2f, ScrollMove: %.2f', [V, LS.ScrollValue, V - LS.ScrollValue, LS.MoveSpace]));
-      
+
       Ctrl.SetBounds(LS.Left, V - LS.ScrollValue, FSize.Width, H);
       Ctrl.Visible := True;
       Ctrl.HitTest := True;
@@ -2054,7 +2091,10 @@ procedure TListViewContent.DoRealign;
     if FViews.ContainsKey(I) then begin
       AH := H;
       // 获取一个列表项视图
-      ItemView := FViews[I];
+      if FAdapter.DisableCache() then
+        ItemView := FAdapter.GetView(I, FViews[I], TViewGroup(Self))
+      else
+        ItemView := FViews[I];
 
       // 如果返回nil, 抛出错误
       if not Assigned(ItemView) then
@@ -2184,11 +2224,11 @@ procedure TListViewContent.DoRealign;
 
       // 更新完大小后，如果高度还是不一致，则使用实际的视图高度
       if ItemView.Height <> AH then begin
-        AH := ItemView.Height;   
+        AH := ItemView.Height;
         // 重新设置位置
         ItemView.SetBounds(X, V - AH - LS.ScrollValue - LS.DividerH, LS.ColumnW, AH);
       end;
-      
+
     end else begin
       // 更新大小并显示出来
       ItemView.SetBounds(X, V - LS.ScrollValue, LS.ColumnW, AH);
@@ -2226,6 +2266,16 @@ procedure TListViewContent.DoRealign;
       V := 0;
     end else begin
       V := FViewTop;
+    end;
+
+    // 当首行显示位置大于0且显示的项目不是第一个时，是因为删除了最后一行引起，
+    // 要进行调节，否则会导致上部分空白
+    if (First > 0) and (V - First > 0) and (S > 0) then begin
+      Item := @ListView.FItemsPoints[S];
+      if Item.H > 0 then begin
+        Dec(S);
+        V := V - LS.DividerH - Item.H;
+      end;
     end;
 
     K := S + FViews.Count;
@@ -2642,7 +2692,8 @@ begin
   if (FCount = 0) then begin
     if Assigned(FFooter) then
       (FFooter as TControl).Visible := False;
-    Exit;
+    if (not Assigned(FHeader)) and (not Assigned(FHeaderView)) then
+      Exit;
   end;
 
   LDisablePaint := FDisablePaint;
@@ -2709,6 +2760,12 @@ begin
   LS.Adjust := 0;
   LS.Left := 0;
   LS.OnItemMeasureHeight := ListView.FOnItemMeasureHeight;
+
+  // 修正向上拉出全部区域后，回弹时显示错误的问题
+  if LS.ScrollValue = 0 then begin
+    FFirstRowIndex := 0;
+    LS.MoveSpace := 0;
+  end;
 
   BeginUpdate;
   try
@@ -2782,7 +2839,7 @@ begin
         X := FLastColumnWidth;
         for I := 0 to FLastColumnCount - 1 do begin
           Canvas.FillRect(RectF(X, LY, X + DividerHeight, Y),
-            0, 0, [], ListView.Opacity, FDividerBrush); 
+            0, 0, [], ListView.Opacity, FDividerBrush);
           X := X + DividerHeight + FLastColumnWidth;
         end;
       end;
@@ -2826,7 +2883,7 @@ function TListViewContent.GetAbsoluteColumnCount: Integer;
 begin
   if FColumnWidth > 0 then begin
     Result := Trunc((Width + ListView.FDividerHeight) / (FColumnWidth + ListView.FDividerHeight));
-    if Result < 1 then Result := 1;    
+    if Result < 1 then Result := 1;
   end else
     Result := FColumnCount;
 end;
@@ -2845,11 +2902,9 @@ function TListViewContent.GetControlFormCacle(const ItemType: Integer): TViewBas
 var
   List: TListViewList;
 begin
-  if not FCacleViews.ContainsKey(Itemtype) then begin
+  if not FCacleViews.TryGetValue(ItemType, List) then begin
     List := TListViewList.Create;
     FCacleViews.Add(ItemType, List);
-  end else begin
-    List := FCacleViews[ItemType];
   end;
   if List.Count > 0 then begin
     Result := List.Last;
@@ -2948,6 +3003,16 @@ begin
     DrawDivider(Canvas);
 end;
 
+procedure TListViewContent.PullRefreshStart;
+begin
+  if not Assigned(FHeader) then
+    Exit;
+  ListView.VScrollBarValue := ListView.VScrollBarValue + (FHeader as TControl).Height;
+  FHeader.DoUpdateState(TListViewState.PullDownFinish, 0);
+  FState := TListViewState.PullDownFinish;
+  DoRealign;
+end;
+
 procedure TListViewContent.RemoveFooterView;
 begin
   if Assigned(FFooterView) then begin
@@ -2984,7 +3049,18 @@ end;
 { TListAdapterBase }
 
 procedure TListAdapterBase.Clear;
+var
+  B: Boolean;
 begin
+  if Assigned(ListView) and Assigned(ListView.ContentViews) then begin
+    B := ListView.FContentViews.FDisableAlign;
+    ListView.FContentViews.FDisableAlign := True;
+    try
+      ListView.ContentViews.HideViews;
+    finally
+      ListView.FContentViews.FDisableAlign := B;
+    end;
+  end;
 end;
 
 constructor TListAdapterBase.Create;
@@ -2992,8 +3068,18 @@ begin
   DoInitData;
 end;
 
+function TListAdapterBase.DisableCache: Boolean;
+begin
+  Result := False;
+end;
+
 procedure TListAdapterBase.DoInitData;
 begin
+end;
+
+function TListAdapterBase.GetItem(const Index: Integer): Pointer;
+begin
+  Result := Pointer(Index);
 end;
 
 function TListAdapterBase.GetItemID(const Index: Integer): Int64;
@@ -3004,6 +3090,11 @@ end;
 function TListAdapterBase.GetItemViewType(const Index: Integer): Integer;
 begin
   Result := ListViewType_Default;
+end;
+
+function TListAdapterBase.IndexOf(const AItem: Pointer): Integer;
+begin
+  Result := -1;
 end;
 
 function TListAdapterBase.IsEmpty: Boolean;
@@ -3304,6 +3395,11 @@ begin
   FChecks.Delete(Index);
 end;
 
+function TStringsListCheckAdapter.DisableCache: Boolean;
+begin
+  Result := True;
+end;
+
 procedure TStringsListCheckAdapter.DoCheckChange(Sender: TObject);
 var
   V: Boolean;
@@ -3312,6 +3408,8 @@ begin
   ItemCheck[TControl(Sender).Tag] := V;
   if Sender is TListViewItemCheck then
     TListViewItemCheck(Sender).CheckBox1.IsChecked := V;
+  if Assigned(ListView.FOnItemClick) then
+    ListView.FOnItemClick(ListView, TControl(Sender).Tag, TControl(Sender));
 end;
 
 function TStringsListCheckAdapter.GetChecks: TArray<Boolean>;
@@ -3364,15 +3462,18 @@ begin
   end else
     ViewItem := TControl(ConvertView) as TListViewItemCheck;
 
+
   ViewItem.BeginUpdate;
   ViewItem.Tag := Index;   // 使用 Tag 记录索引号
   ViewItem.OnClick := DoCheckChange;
-  ViewItem.CheckBox1.IsChecked := ItemCheck[Index];
+  ViewItem.CheckBox1.IsChecked := not ItemCheck[Index];
   ViewItem.HeightSize := TViewSize.WrapContent;
   ViewItem.DoRealign;
   ViewItem.TextView1.Text := Items[Index];
   ViewItem.Height := ViewItem.TextView1.Size.Height;
   ViewItem.EndUpdate;
+  ViewItem.CheckBox1.IsChecked := ItemCheck[Index];
+
   Result := TViewBase(ViewItem);
 end;
 
@@ -3382,6 +3483,12 @@ begin
   inherited;
   if FChecks.Len >= Index + 1 then
     FChecks.Insert(Index, False);
+end;
+
+procedure TStringsListCheckAdapter.SetArrayLength(const ACount: Integer);
+begin
+  inherited SetArrayLength(ACount);
+  FChecks.Len := ACount;
 end;
 
 procedure TStringsListCheckAdapter.SetChecks(const Value: TArray<Boolean>);
@@ -3460,6 +3567,7 @@ begin
   ViewItem.TextView1.Text := Items[Index];
   ViewItem.Height := ViewItem.TextView1.Height;
   ViewItem.EndUpdate;
+
   Result := TViewBase(ViewItem);
 end;
 
@@ -3504,6 +3612,12 @@ begin
     FNodes := TList<TTreeListNode<T>>.Create;
     FNodes.OnNotify := DoNodeNotify;
   end;
+end;
+
+procedure TTreeListNode<T>.DeleteSelf;
+begin
+  if Assigned(FParent) then
+    FParent.Remove(Self);
 end;
 
 destructor TTreeListNode<T>.Destroy;
